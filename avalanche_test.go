@@ -1,6 +1,8 @@
 package avalanche
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestVoteRecord(t *testing.T) {
 	vr := NewVoteRecord()
@@ -127,14 +129,34 @@ func TestBlockRegister(t *testing.T) {
 	assertTrue(t, p.hasFinalized(pindex))
 }
 
+func TestProcessorEventLoop(t *testing.T) {
+	p := NewProcessor()
+
+	// Start loop
+	assertTrue(t, p.start())
+
+	// Can't start it twice
+	assertFalse(t, p.start())
+
+	// Stop loop
+	assertTrue(t, p.stop())
+
+	// Can't stop twice
+	assertFalse(t, p.stop())
+
+	// You can restart it and stop it again
+	assertTrue(t, p.start())
+	assertTrue(t, p.stop())
+}
+
 func assertTrue(t *testing.T, actual bool) {
 	if !actual {
-		t.Fatal("Excpected true; got false")
+		t.Fatal("Expected true; got false")
 	}
 }
 
 func assertFalse(t *testing.T, actual bool) {
 	if actual {
-		t.Fatal("Excpected false; got true")
+		t.Fatal("Expected false; got true")
 	}
 }

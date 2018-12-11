@@ -1,11 +1,19 @@
 package avalanche
 
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
 const (
 	AvalancheFinalizationScore = 128
 	// AvalancheFinalizationScore uint16 = 128
-)
 
-type blockIndex int
+	AvalancheTimeStep = 10 * time.Millisecond
+
+	AvalancheMaxElementPoll = 4096
+)
 
 type VoteRecord struct {
 	votes      uint16
@@ -102,15 +110,20 @@ func (r Response) GetVotes() []Vote {
 
 type Processor struct {
 	voteRecords map[blockIndex]*VoteRecord
+
+	runMu     sync.Mutex
+	isRunning bool
+	quitCh    chan (struct{})
+	doneCh    chan (struct{})
 }
 
-func NewProcessor() Processor {
-	return Processor{
+func NewProcessor() *Processor {
+	return &Processor{
 		voteRecords: map[blockIndex]*VoteRecord{},
 	}
 }
 
-func (p Processor) addBlockToReconcile(index blockIndex) bool {
+func (p *Processor) addBlockToReconcile(index blockIndex) bool {
 	_, ok := p.voteRecords[index]
 	if ok {
 		return false
@@ -120,21 +133,21 @@ func (p Processor) addBlockToReconcile(index blockIndex) bool {
 	return true
 }
 
-func (p Processor) isAccepted(index blockIndex) bool {
+func (p *Processor) isAccepted(index blockIndex) bool {
 	if vr, ok := p.voteRecords[index]; ok {
 		return vr.isValid()
 	}
 	return false
 }
 
-func (p Processor) hasFinalized(index blockIndex) bool {
+func (p *Processor) hasFinalized(index blockIndex) bool {
 	if vr, ok := p.voteRecords[index]; ok {
 		return vr.hasFinalized()
 	}
 	return false
 }
 
-func (p Processor) registerVotes(resp Response) bool {
+func (p *Processor) registerVotes(resp Response) bool {
 	for _, v := range resp.GetVotes() {
 		vr, ok := p.voteRecords[blockIndexForHash(v.GetHash())]
 		if !ok {
@@ -146,6 +159,58 @@ func (p Processor) registerVotes(resp Response) bool {
 
 	return true
 }
+
+func (p *Processor) start() bool {
+	p.runMu.Lock()
+	defer p.runMu.Unlock()
+
+	if p.isRunning {
+		return false
+	}
+
+	p.isRunning = true
+	p.quitCh = make(chan (struct{}))
+	p.doneCh = make(chan (struct{}))
+	fmt.Println("created new p.quitCh")
+
+	go func() {
+		t := time.NewTicker(AvalancheTimeStep)
+		for {
+			select {
+			case <-p.quitCh:
+				close(p.doneCh)
+				return
+			case <-t.C:
+				// Perform loop code
+			}
+		}
+	}()
+
+	return true
+}
+
+func (p *Processor) stop() bool {
+	p.runMu.Lock()
+	defer p.runMu.Unlock()
+
+	if !p.isRunning {
+		return false
+	}
+
+	close(p.quitCh)
+	<-p.doneCh
+
+	p.isRunning = false
+	return true
+}
+
+//
+// Development stubs
+//
+
+// TODO: replace with real types for tracking
+// blocks or txs
+type blockIndex int
 
 // TODO: figure out the best way to represent or abstract blocks
 func blockIndexForHash(hash blockIndex) blockIndex {
