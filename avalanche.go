@@ -1,7 +1,6 @@
 package avalanche
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
@@ -160,6 +159,25 @@ func (p *Processor) registerVotes(resp Response) bool {
 	return true
 }
 
+func (p *Processor) getInvsForNextPoll() []Inv {
+	invs := make([]Inv, 0, len(p.voteRecords))
+
+	for idx, r := range p.voteRecords {
+		if r.hasFinalized() {
+			// If this has finalized we can just skip.
+			continue
+		}
+
+		// We don't have a decision, we need more votes.
+		invs = append(invs, Inv{"block", idx})
+		if len(invs) >= AvalancheMaxElementPoll {
+			break
+		}
+	}
+
+	return invs
+}
+
 func (p *Processor) start() bool {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()
@@ -171,7 +189,6 @@ func (p *Processor) start() bool {
 	p.isRunning = true
 	p.quitCh = make(chan (struct{}))
 	p.doneCh = make(chan (struct{}))
-	fmt.Println("created new p.quitCh")
 
 	go func() {
 		t := time.NewTicker(AvalancheTimeStep)
@@ -207,9 +224,11 @@ func (p *Processor) stop() bool {
 //
 // Development stubs
 //
+type Inv struct {
+	targetType string
+	targetHash blockIndex
+}
 
-// TODO: replace with real types for tracking
-// blocks or txs
 type blockIndex int
 
 // TODO: figure out the best way to represent or abstract blocks

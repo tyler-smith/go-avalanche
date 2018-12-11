@@ -71,19 +71,42 @@ func TestBlockRegister(t *testing.T) {
 	p := NewProcessor()
 
 	pindex := blockIndex(42)
-	hash := pindex
+	blockHash := pindex
+
+	assertExistingBlockPoll := func() {
+		invs := p.getInvsForNextPoll()
+		if len(invs) != 1 {
+			t.Fatal("Should have exactly 1 inv")
+		}
+		if invs[0].targetType != "block" {
+			t.Fatal("Inv targetType should be block")
+		}
+		if invs[0].targetHash != blockHash {
+			t.Fatal("Incorrect block hash. Wanted:", blockHash, "but got:", invs[0].targetHash)
+		}
+	}
+
+	assertNoBlockPoll := func() {
+		invs := p.getInvsForNextPoll()
+		if len(invs) != 0 {
+			t.Fatal("Should have no invs")
+		}
+	}
 
 	// Query for random block should return false
 	assertFalse(t, p.isAccepted(pindex))
 	assertFalse(t, p.hasFinalized(pindex))
 
-	// Newly added blocks are also considered rejected
+	// Add a new block. Check that it's added to the polls
 	assertTrue(t, p.addBlockToReconcile(pindex))
+	assertExistingBlockPoll()
+
+	// Newly added blocks are also considered rejected
 	assertFalse(t, p.isAccepted(pindex))
 	assertFalse(t, p.hasFinalized(pindex))
 
 	// Vote for the block a few times
-	r := Response{votes: []Vote{Vote{0, hash}}}
+	r := Response{votes: []Vote{Vote{0, blockHash}}}
 
 	for i := 0; i < 5; i++ {
 		p.registerVotes(r)
@@ -94,13 +117,19 @@ func TestBlockRegister(t *testing.T) {
 	// Now it is accepted, but we can vote for it numerous times.
 	for i := 0; i < AvalancheFinalizationScore; i++ {
 		p.registerVotes(r)
+
+		// Newly added blocks are also considered rejected.
 		assertTrue(t, p.isAccepted(pindex))
 		assertFalse(t, p.hasFinalized(pindex))
 	}
 
+	// As long as it is not finalized, we poll.
+	assertExistingBlockPoll()
+
 	// Now finalize the decision.
-	r = Response{votes: []Vote{Vote{1, hash}}}
+	r = Response{votes: []Vote{Vote{1, blockHash}}}
 	p.registerVotes(r)
+	assertNoBlockPoll()
 	assertTrue(t, p.isAccepted(pindex))
 	assertTrue(t, p.hasFinalized(pindex))
 
@@ -118,8 +147,12 @@ func TestBlockRegister(t *testing.T) {
 		assertFalse(t, p.hasFinalized(pindex))
 	}
 
+	// As long as it is not finalized, we poll.
+	assertExistingBlockPoll()
+
 	// Now finalize the decision.
 	p.registerVotes(r)
+	assertNoBlockPoll()
 	assertFalse(t, p.isAccepted(pindex))
 	assertTrue(t, p.hasFinalized(pindex))
 
