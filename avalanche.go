@@ -150,7 +150,8 @@ func (p *Processor) registerVotes(resp Response) bool {
 	for _, v := range resp.GetVotes() {
 		vr, ok := p.voteRecords[blockIndexForHash(v.GetHash())]
 		if !ok {
-			// TODO: return error
+			// We are not voting on this anymore
+			continue
 		}
 
 		vr.regsiterVote(v.IsValid())
