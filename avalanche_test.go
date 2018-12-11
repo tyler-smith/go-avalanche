@@ -70,8 +70,9 @@ func registerVoteAndCheck(t *testing.T, vr *VoteRecord, vote, state, finalized b
 func TestBlockRegister(t *testing.T) {
 	p := NewProcessor()
 
-	pindex := blockIndex(42)
-	blockHash := pindex
+	blockHash := Hash(65)
+	pindex := blockHash
+	// pindex := staticTestBlockMap[blockHash]
 
 	// Query for random block should return false
 	assertFalse(t, p.isAccepted(pindex))
@@ -148,10 +149,10 @@ func TestBlockRegister(t *testing.T) {
 func TestMultiBlockRegister(t *testing.T) {
 	p := NewProcessor()
 
-	pindexA := blockIndex(65)
+	pindexA := Hash(65)
 	blockHashA := pindexA
 
-	pindexB := blockIndex(66)
+	pindexB := Hash(66)
 	blockHashB := pindexB
 
 	resp := Response{0, []Vote{Vote{0, blockHashA}, Vote{0, blockHashB}}}
@@ -239,7 +240,7 @@ func assertBlockPollCount(t *testing.T, p *Processor, count int) {
 	}
 }
 
-func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash blockIndex) {
+func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash Hash) {
 	found := false
 	for _, inv := range p.getInvsForNextPoll() {
 		if inv.targetHash == blockHash {
@@ -250,4 +251,9 @@ func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash blockIndex) 
 	if !found {
 		t.Fatal("No inv for hash", blockHash)
 	}
+}
+
+var staticTestBlockMap = map[Hash]*Block{
+	Hash(65): &Block{Hash(65), 1, 99},
+	Hash(66): &Block{Hash(66), 1, 100},
 }
