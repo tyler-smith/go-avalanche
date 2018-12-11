@@ -69,9 +69,12 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 
 		// We don't have a decision, we need more votes.
 		invs = append(invs, Inv{"block", idx})
-		if len(invs) >= AvalancheMaxElementPoll {
-			break
-		}
+	}
+
+	sortBlockInvsByWork(invs)
+
+	if len(invs) >= AvalancheMaxElementPoll {
+		invs = invs[:AvalancheMaxElementPoll]
 	}
 
 	return invs

@@ -174,12 +174,15 @@ func TestMultiBlockRegister(t *testing.T) {
 	// Start voting on block B after one vote
 	assertTrue(t, p.addBlockToReconcile(pindexB))
 	assertBlockPollCount(t, p, 2)
-	assertPollExistsForBlock(t, p, pindexA)
-	assertPollExistsForBlock(t, p, pindexB)
 
-	// TODO: somehow the ABC code has blocks coming out correctly sorted by PoW desc
-	// but I can't figure out how the blocks are getting sorted that way. The AvalancheProcessor
-	// appears to assume its vote_records properties is natually sorted
+	// B should be first because it has more accumulated work
+	invs := p.getInvsForNextPoll()
+	if invs[0].targetHash != blockHashB {
+		t.Fatal("Inv for block B should be first because it has more work")
+	}
+	if invs[1].targetHash != blockHashA {
+		t.Fatal("Inv for block B should be first because it has more work")
+	}
 
 	// Now it is rejected but we can vote for it numerous times
 	for i := 0; i < AvalancheFinalizationScore+4; i++ {
@@ -251,9 +254,4 @@ func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash Hash) {
 	if !found {
 		t.Fatal("No inv for hash", blockHash)
 	}
-}
-
-var staticTestBlockMap = map[Hash]*Block{
-	Hash(65): &Block{Hash(65), 1, 99},
-	Hash(66): &Block{Hash(66), 1, 100},
 }
