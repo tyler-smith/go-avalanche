@@ -1,27 +1,22 @@
 package avalanche
 
-import (
-	"math/bits"
+const (
+	AvalancheFinalizationScore = 128
+	// AvalancheFinalizationScore uint16 = 128
 )
 
-const (
-	AvalancheFinalizationScore uint16 = 128
-)
+type blockIndex int
 
 type VoteRecord struct {
 	votes      uint16
 	confidence uint16
 }
 
-func NewVoteRecord() VoteRecord {
-	return VoteRecord{
-		votes:      0xaaaa,
-		confidence: 0,
-	}
+func NewVoteRecord() *VoteRecord {
+	return &VoteRecord{votes: 0xaaaa}
 }
 
-func (vr VoteRecord) IsValid() bool {
-	// fmt.Println(vr.confidence)
+func (vr VoteRecord) isValid() bool {
 	return (vr.confidence & 0x01) == 1
 }
 
@@ -41,7 +36,7 @@ func (vr *VoteRecord) regsiterVote(vote bool) bool {
 
 	vr.votes = (vr.votes << 1) | voteInt
 
-	bitCount := bits.OnesCount16(vr.votes & 0xff)
+	bitCount := countBits(vr.votes & 0xff)
 	yes := (bitCount > 6)
 	no := (bitCount < 2)
 
@@ -51,7 +46,7 @@ func (vr *VoteRecord) regsiterVote(vote bool) bool {
 	}
 
 	// Vote is conclusive and agrees with our current state
-	if vr.IsValid() == yes {
+	if vr.isValid() == yes {
 		vr.confidence += 2
 
 		// Vote is conclusive but does not agree with our current state
@@ -63,4 +58,96 @@ func (vr *VoteRecord) regsiterVote(vote bool) bool {
 	}
 
 	return true
+}
+
+func countBits(i uint16) (count int) {
+	for ; i > 0; i &= (i - 1) {
+		count++
+	}
+	return count
+}
+
+type Vote struct {
+	err uint32
+
+	// TODO: make this actually a hash
+	hash blockIndex
+	// hash [64]byte
+}
+
+func NewVote() Vote {
+	return Vote{}
+}
+
+func (v Vote) GetHash() blockIndex {
+	return v.hash
+}
+
+func (v Vote) IsValid() bool {
+	return v.err == 0
+}
+
+type Response struct {
+	cooldown uint32
+	votes    []Vote
+}
+
+func NewResponse() Response {
+	return Response{}
+}
+
+func (r Response) GetVotes() []Vote {
+	return r.votes
+}
+
+type Processor struct {
+	voteRecords map[blockIndex]*VoteRecord
+}
+
+func NewProcessor() Processor {
+	return Processor{
+		voteRecords: map[blockIndex]*VoteRecord{},
+	}
+}
+
+func (p Processor) addBlockToReconcile(index blockIndex) bool {
+	_, ok := p.voteRecords[index]
+	if ok {
+		return false
+	}
+
+	p.voteRecords[index] = NewVoteRecord()
+	return true
+}
+
+func (p Processor) isAccepted(index blockIndex) bool {
+	if vr, ok := p.voteRecords[index]; ok {
+		return vr.isValid()
+	}
+	return false
+}
+
+func (p Processor) hasFinalized(index blockIndex) bool {
+	if vr, ok := p.voteRecords[index]; ok {
+		return vr.hasFinalized()
+	}
+	return false
+}
+
+func (p Processor) registerVotes(resp Response) bool {
+	for _, v := range resp.GetVotes() {
+		vr, ok := p.voteRecords[blockIndexForHash(v.GetHash())]
+		if !ok {
+			// TODO: return error
+		}
+
+		vr.regsiterVote(v.IsValid())
+	}
+
+	return true
+}
+
+// TODO: figure out the best way to represent or abstract blocks
+func blockIndexForHash(hash blockIndex) blockIndex {
+	return hash
 }
