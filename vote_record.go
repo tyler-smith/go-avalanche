@@ -9,7 +9,7 @@ func NewVoteRecord() *VoteRecord {
 	return &VoteRecord{votes: 0xaaaa}
 }
 
-func (vr VoteRecord) isValid() bool {
+func (vr VoteRecord) isAccepted() bool {
 	return (vr.confidence & 0x01) == 1
 }
 
@@ -21,6 +21,8 @@ func (vr VoteRecord) hasFinalized() bool {
 	return vr.getConfidence() >= AvalancheFinalizationScore
 }
 
+// regsiterVote adds a new vote for an item and update confidence accordingly.
+// Returns true if the acceptance or finalization state changed.
 func (vr *VoteRecord) regsiterVote(vote bool) bool {
 	var voteInt uint16
 	if vote {
@@ -39,16 +41,13 @@ func (vr *VoteRecord) regsiterVote(vote bool) bool {
 	}
 
 	// Vote is conclusive and agrees with our current state
-	if vr.isValid() == yes {
+	if vr.isAccepted() == yes {
 		vr.confidence += 2
 		return vr.hasFinalized()
 	}
 
 	// Vote is conclusive but does not agree with our current state
-	vr.confidence = 0
-	if yes {
-		vr.confidence++
-	}
+	vr.confidence = boolToUint16(yes)
 
 	return true
 }
@@ -58,4 +57,11 @@ func countBits(i uint16) (count int) {
 		count++
 	}
 	return count
+}
+
+func boolToUint16(b bool) (i uint16) {
+	if b {
+		i = 1
+	}
+	return i
 }

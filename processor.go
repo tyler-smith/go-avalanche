@@ -32,19 +32,19 @@ func (p *Processor) addBlockToReconcile(hash Hash) bool {
 
 func (p *Processor) isAccepted(hash Hash) bool {
 	if vr, ok := p.voteRecords[hash]; ok {
-		return vr.isValid()
+		return vr.isAccepted()
 	}
 	return false
 }
 
-func (p *Processor) hasFinalized(hash Hash) bool {
-	if vr, ok := p.voteRecords[hash]; ok {
-		return vr.hasFinalized()
-	}
-	return false
-}
+// func (p *Processor) hasFinalized(hash Hash) bool {
+// 	if vr, ok := p.voteRecords[hash]; ok {
+// 		return vr.hasFinalized()
+// 	}
+// 	return false
+// }
 
-func (p *Processor) registerVotes(resp Response) bool {
+func (p *Processor) registerVotes(resp Response, updates *[]StatusUpdate) {
 	for _, v := range resp.GetVotes() {
 		vr, ok := p.voteRecords[v.GetHash()]
 		if !ok {
@@ -52,10 +52,33 @@ func (p *Processor) registerVotes(resp Response) bool {
 			continue
 		}
 
-		vr.regsiterVote(v.IsValid())
-	}
+		if !vr.regsiterVote(v.IsValid()) {
+			// This vote did not provide any extra information
+			continue
+		}
 
-	return true
+		// Add appropriate status
+		var status Status
+		finalized := vr.hasFinalized()
+		accepted := vr.isAccepted()
+		switch {
+		case !finalized && accepted:
+			status = StatusAccepted
+		case !finalized && !accepted:
+			status = StatusRejected
+		case finalized && accepted:
+			status = StatusFinalized
+		case finalized && !accepted:
+			status = StatusInvalid
+		}
+
+		*updates = append(*updates, StatusUpdate{v.GetHash(), status})
+
+		// When we finalize we want to remove our vote record
+		if finalized {
+			delete(p.voteRecords, v.GetHash())
+		}
+	}
 }
 
 func (p *Processor) getInvsForNextPoll() []Inv {

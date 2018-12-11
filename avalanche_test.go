@@ -39,7 +39,7 @@ func TestVoteRecord(t *testing.T) {
 }
 
 func checkInitialVoteRecord(t *testing.T, vr *VoteRecord) {
-	if vr.isValid() {
+	if vr.isAccepted() {
 		t.Fatal("Expected isValid to be false but it was true")
 	}
 
@@ -55,7 +55,7 @@ func checkInitialVoteRecord(t *testing.T, vr *VoteRecord) {
 func registerVoteAndCheck(t *testing.T, vr *VoteRecord, vote, state, finalized bool, confidence uint16) {
 	vr.regsiterVote(vote)
 
-	if vr.isValid() != state {
+	if vr.isAccepted() != state {
 		t.Fatal("Expected IsValid to be", state, "but it was not")
 	}
 
@@ -69,14 +69,19 @@ func registerVoteAndCheck(t *testing.T, vr *VoteRecord, vote, state, finalized b
 }
 func TestBlockRegister(t *testing.T) {
 	p := NewProcessor()
+	updates := []StatusUpdate{}
 
 	blockHash := Hash(65)
 	pindex := blockHash
-	// pindex := staticTestBlockMap[blockHash]
+
+	assertUpdateCount := func(c int) {
+		if len(updates) != c {
+			t.Fatal("Expected", c, "updates")
+		}
+	}
 
 	// Query for random block should return false
 	assertFalse(t, p.isAccepted(pindex))
-	assertFalse(t, p.hasFinalized(pindex))
 
 	// Add a new block. Check that it's added to the polls
 	assertTrue(t, p.addBlockToReconcile(pindex))
@@ -85,24 +90,33 @@ func TestBlockRegister(t *testing.T) {
 
 	// Newly added blocks are also considered rejected
 	assertFalse(t, p.isAccepted(pindex))
-	assertFalse(t, p.hasFinalized(pindex))
 
 	// Vote for the block a few times
 	r := Response{votes: []Vote{Vote{0, blockHash}}}
 
 	for i := 0; i < 5; i++ {
-		p.registerVotes(r)
+		p.registerVotes(r, &updates)
 		assertFalse(t, p.isAccepted(pindex))
-		assertFalse(t, p.hasFinalized(pindex))
+		assertUpdateCount(0)
 	}
 
-	// Now it is accepted, but we can vote for it numerous times.
-	for i := 0; i < AvalancheFinalizationScore; i++ {
-		p.registerVotes(r)
+	// Now the state will flip.
+	p.registerVotes(r, &updates)
+	assertTrue(t, p.isAccepted(pindex))
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHash {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHash)
+	}
+	if updates[0].Status != StatusAccepted {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
+	}
+	updates = []StatusUpdate{}
 
-		// Newly added blocks are also considered rejected.
+	// Now it is accepted, but we can vote for it numerous times.
+	for i := 1; i < AvalancheFinalizationScore; i++ {
+		p.registerVotes(r, &updates)
 		assertTrue(t, p.isAccepted(pindex))
-		assertFalse(t, p.hasFinalized(pindex))
+		assertUpdateCount(0)
 	}
 
 	// As long as it is not finalized, we poll.
@@ -111,23 +125,34 @@ func TestBlockRegister(t *testing.T) {
 
 	// Now finalize the decision.
 	r = Response{votes: []Vote{Vote{1, blockHash}}}
-	p.registerVotes(r)
+	p.registerVotes(r, &updates)
 	assertBlockPollCount(t, p, 0)
-	assertTrue(t, p.isAccepted(pindex))
-	assertTrue(t, p.hasFinalized(pindex))
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHash {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHash)
+	}
+	if updates[0].Status != StatusFinalized {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusFinalized)
+	}
+	updates = []StatusUpdate{}
 
 	// Now let's undo this and finalize rejection.
-	for i := 0; i < 5; i++ {
-		p.registerVotes(r)
-		assertTrue(t, p.isAccepted(pindex))
-		assertTrue(t, p.hasFinalized(pindex))
+	assertTrue(t, p.addBlockToReconcile(pindex))
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, blockHash)
+
+	// Only 3 here as we don't need to flip state
+	for i := 0; i < 3; i++ {
+		p.registerVotes(r, &updates)
+		assertFalse(t, p.isAccepted(pindex))
+		assertUpdateCount(0)
 	}
 
 	// Now it is rejected, but we can vote for it numerous times.
 	for i := 0; i < AvalancheFinalizationScore; i++ {
-		p.registerVotes(r)
+		p.registerVotes(r, &updates)
 		assertFalse(t, p.isAccepted(pindex))
-		assertFalse(t, p.hasFinalized(pindex))
+		assertUpdateCount(0)
 	}
 
 	// As long as it is not finalized, we poll.
@@ -135,19 +160,26 @@ func TestBlockRegister(t *testing.T) {
 	assertPollExistsForBlock(t, p, blockHash)
 
 	// Now finalize the decision.
-	p.registerVotes(r)
+	p.registerVotes(r, &updates)
 	assertBlockPollCount(t, p, 0)
 	assertFalse(t, p.isAccepted(pindex))
-	assertTrue(t, p.hasFinalized(pindex))
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHash {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHash)
+	}
+	if updates[0].Status != StatusInvalid {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusInvalid)
+	}
 
 	// Adding the block twice does nothing.
-	assertFalse(t, p.addBlockToReconcile(pindex))
+	assertTrue(t, p.addBlockToReconcile(pindex))
 	assertFalse(t, p.isAccepted(pindex))
-	assertTrue(t, p.hasFinalized(pindex))
+	assertFalse(t, p.isAccepted(pindex))
 }
 
 func TestMultiBlockRegister(t *testing.T) {
 	p := NewProcessor()
+	updates := []StatusUpdate{}
 
 	pindexA := Hash(65)
 	blockHashA := pindexA
@@ -157,19 +189,24 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	resp := Response{0, []Vote{Vote{0, blockHashA}, Vote{0, blockHashB}}}
 
+	assertUpdateCount := func(c int) {
+		if len(updates) != c {
+			t.Fatal("Expected", c, "updates")
+		}
+	}
+
 	// Query for random block should return false
 	assertFalse(t, p.isAccepted(pindexA))
-	assertFalse(t, p.hasFinalized(pindexA))
 	assertFalse(t, p.isAccepted(pindexB))
-	assertFalse(t, p.hasFinalized(pindexB))
 
 	// Start voting on block A.
 	assertTrue(t, p.addBlockToReconcile(pindexA))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindexA)
 
-	// Vote both blocks
-	p.registerVotes(resp)
+	// Vote on block A
+	p.registerVotes(resp, &updates)
+	assertUpdateCount(0)
 
 	// Start voting on block B after one vote
 	assertTrue(t, p.addBlockToReconcile(pindexB))
@@ -184,21 +221,65 @@ func TestMultiBlockRegister(t *testing.T) {
 		t.Fatal("Inv for block B should be first because it has more work")
 	}
 
+	// Let's vote for this block a few times
+	for i := 0; i < 4; i++ {
+		p.registerVotes(resp, &updates)
+		assertUpdateCount(0)
+	}
+
+	// Now the state will flip for A
+	p.registerVotes(resp, &updates)
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHashA {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
+	}
+	if updates[0].Status != StatusAccepted {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
+	}
+	updates = []StatusUpdate{}
+
+	// And then for B
+	p.registerVotes(resp, &updates)
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHashB {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashB)
+	}
+	if updates[0].Status != StatusAccepted {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
+	}
+	updates = []StatusUpdate{}
+
 	// Now it is rejected but we can vote for it numerous times
-	for i := 0; i < AvalancheFinalizationScore+4; i++ {
-		p.registerVotes(resp)
-		assertFalse(t, p.hasFinalized(pindexA))
+	for i := 2; i < AvalancheFinalizationScore; i++ {
+		p.registerVotes(resp, &updates)
+		assertUpdateCount(0)
 	}
 
 	// Next vote will finalize block A
-	p.registerVotes(resp)
+	p.registerVotes(resp, &updates)
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHashA {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
+	}
+	if updates[0].Status != StatusFinalized {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusFinalized)
+	}
+	updates = []StatusUpdate{}
 
 	// We do not vote on A anymore
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindexB)
 
 	// Next vote will finalize block B
-	p.registerVotes(resp)
+	p.registerVotes(resp, &updates)
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHashB {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashB)
+	}
+	if updates[0].Status != StatusFinalized {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusFinalized)
+	}
+	updates = []StatusUpdate{}
 
 	// There is nothing left to vote on
 	assertBlockPollCount(t, p, 0)
@@ -226,12 +307,14 @@ func TestProcessorEventLoop(t *testing.T) {
 
 func assertTrue(t *testing.T, actual bool) {
 	if !actual {
+		panic("")
 		t.Fatal("Expected true; got false")
 	}
 }
 
 func assertFalse(t *testing.T, actual bool) {
 	if actual {
+		panic("")
 		t.Fatal("Expected false; got true")
 	}
 }

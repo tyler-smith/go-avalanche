@@ -11,6 +11,20 @@ const (
 	AvalancheMaxElementPoll    = 4096
 )
 
+type Status int
+
+const (
+	StatusInvalid Status = iota
+	StatusRejected
+	StatusAccepted
+	StatusFinalized
+)
+
+type StatusUpdate struct {
+	Hash
+	Status
+}
+
 var staticTestBlockMap = map[Hash]*Block{
 	Hash(65): &Block{Hash(65), 1, 99},
 	Hash(66): &Block{Hash(66), 1, 100},
