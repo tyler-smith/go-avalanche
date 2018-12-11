@@ -73,33 +73,14 @@ func TestBlockRegister(t *testing.T) {
 	pindex := blockIndex(42)
 	blockHash := pindex
 
-	assertExistingBlockPoll := func() {
-		invs := p.getInvsForNextPoll()
-		if len(invs) != 1 {
-			t.Fatal("Should have exactly 1 inv")
-		}
-		if invs[0].targetType != "block" {
-			t.Fatal("Inv targetType should be block")
-		}
-		if invs[0].targetHash != blockHash {
-			t.Fatal("Incorrect block hash. Wanted:", blockHash, "but got:", invs[0].targetHash)
-		}
-	}
-
-	assertNoBlockPoll := func() {
-		invs := p.getInvsForNextPoll()
-		if len(invs) != 0 {
-			t.Fatal("Should have no invs")
-		}
-	}
-
 	// Query for random block should return false
 	assertFalse(t, p.isAccepted(pindex))
 	assertFalse(t, p.hasFinalized(pindex))
 
 	// Add a new block. Check that it's added to the polls
 	assertTrue(t, p.addBlockToReconcile(pindex))
-	assertExistingBlockPoll()
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, blockHash)
 
 	// Newly added blocks are also considered rejected
 	assertFalse(t, p.isAccepted(pindex))
@@ -124,12 +105,13 @@ func TestBlockRegister(t *testing.T) {
 	}
 
 	// As long as it is not finalized, we poll.
-	assertExistingBlockPoll()
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, blockHash)
 
 	// Now finalize the decision.
 	r = Response{votes: []Vote{Vote{1, blockHash}}}
 	p.registerVotes(r)
-	assertNoBlockPoll()
+	assertBlockPollCount(t, p, 0)
 	assertTrue(t, p.isAccepted(pindex))
 	assertTrue(t, p.hasFinalized(pindex))
 
@@ -148,11 +130,12 @@ func TestBlockRegister(t *testing.T) {
 	}
 
 	// As long as it is not finalized, we poll.
-	assertExistingBlockPoll()
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, blockHash)
 
 	// Now finalize the decision.
 	p.registerVotes(r)
-	assertNoBlockPoll()
+	assertBlockPollCount(t, p, 0)
 	assertFalse(t, p.isAccepted(pindex))
 	assertTrue(t, p.hasFinalized(pindex))
 
@@ -160,6 +143,61 @@ func TestBlockRegister(t *testing.T) {
 	assertFalse(t, p.addBlockToReconcile(pindex))
 	assertFalse(t, p.isAccepted(pindex))
 	assertTrue(t, p.hasFinalized(pindex))
+}
+
+func TestMultiBlockRegister(t *testing.T) {
+	p := NewProcessor()
+
+	pindexA := blockIndex(65)
+	blockHashA := pindexA
+
+	pindexB := blockIndex(66)
+	blockHashB := pindexB
+
+	resp := Response{0, []Vote{Vote{0, blockHashA}, Vote{0, blockHashB}}}
+
+	// Query for random block should return false
+	assertFalse(t, p.isAccepted(pindexA))
+	assertFalse(t, p.hasFinalized(pindexA))
+	assertFalse(t, p.isAccepted(pindexB))
+	assertFalse(t, p.hasFinalized(pindexB))
+
+	// Start voting on block A.
+	assertTrue(t, p.addBlockToReconcile(pindexA))
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, pindexA)
+
+	// Vote both blocks
+	p.registerVotes(resp)
+
+	// Start voting on block B after one vote
+	assertTrue(t, p.addBlockToReconcile(pindexB))
+	assertBlockPollCount(t, p, 2)
+	assertPollExistsForBlock(t, p, pindexA)
+	assertPollExistsForBlock(t, p, pindexB)
+
+	// TODO: somehow the ABC code has blocks coming out correctly sorted by PoW desc
+	// but I can't figure out how the blocks are getting sorted that way. The AvalancheProcessor
+	// appears to assume its vote_records properties is natually sorted
+
+	// Now it is rejected but we can vote for it numerous times
+	for i := 0; i < AvalancheFinalizationScore+4; i++ {
+		p.registerVotes(resp)
+		assertFalse(t, p.hasFinalized(pindexA))
+	}
+
+	// Next vote will finalize block A
+	p.registerVotes(resp)
+
+	// We do not vote on A anymore
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, pindexB)
+
+	// Next vote will finalize block B
+	p.registerVotes(resp)
+
+	// There is nothing left to vote on
+	assertBlockPollCount(t, p, 0)
 }
 
 func TestProcessorEventLoop(t *testing.T) {
@@ -191,5 +229,25 @@ func assertTrue(t *testing.T, actual bool) {
 func assertFalse(t *testing.T, actual bool) {
 	if actual {
 		t.Fatal("Expected false; got true")
+	}
+}
+
+func assertBlockPollCount(t *testing.T, p *Processor, count int) {
+	invs := p.getInvsForNextPoll()
+	if len(invs) != count {
+		t.Fatal("Should have exactly", count, "invs but have", len(invs))
+	}
+}
+
+func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash blockIndex) {
+	found := false
+	for _, inv := range p.getInvsForNextPoll() {
+		if inv.targetHash == blockHash {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Fatal("No inv for hash", blockHash)
 	}
 }
