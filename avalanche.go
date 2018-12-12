@@ -81,3 +81,16 @@ type Block struct {
 }
 
 type Hash int
+
+type Connman interface {
+	Nodes()
+	PushMessage()
+}
+
+type DummyConnman struct{}
+
+func (DummyConnman) Nodes() {}
+
+func (DummyConnman) PushMessage() {}
+
+var testPeer = NodeID(42)

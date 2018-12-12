@@ -5,8 +5,29 @@ import (
 	"time"
 )
 
+type NodeID int64
+
+type RequestRecord struct {
+	timestamp int64
+	invs      []Inv
+}
+
+func NewRequestRecord(timestamp int64, invs []Inv) RequestRecord {
+	return RequestRecord{timestamp, invs}
+}
+
+func (r RequestRecord) GetTimestamp() int64 {
+	return r.timestamp
+}
+
+func (r RequestRecord) GetInvs() []Inv {
+	return r.invs
+}
+
 type Processor struct {
 	voteRecords map[Hash]*VoteRecord
+	queries     map[NodeID]RequestRecord
+	nodeIDs     map[NodeID]struct{}
 
 	runMu     sync.Mutex
 	isRunning bool
@@ -17,6 +38,8 @@ type Processor struct {
 func NewProcessor() *Processor {
 	return &Processor{
 		voteRecords: map[Hash]*VoteRecord{},
+		queries:     map[NodeID]RequestRecord{},
+		nodeIDs:     map[NodeID]struct{}{},
 	}
 }
 
@@ -37,15 +60,27 @@ func (p *Processor) isAccepted(hash Hash) bool {
 	return false
 }
 
-// func (p *Processor) hasFinalized(hash Hash) bool {
-// 	if vr, ok := p.voteRecords[hash]; ok {
-// 		return vr.hasFinalized()
-// 	}
-// 	return false
-// }
+func (p *Processor) registerVotes(id NodeID, resp Response, updates *[]StatusUpdate) bool {
+	r, ok := p.queries[id]
+	if !ok {
+		return false
+	}
+	delete(p.queries, id)
 
-func (p *Processor) registerVotes(resp Response, updates *[]StatusUpdate) {
-	for _, v := range resp.GetVotes() {
+	invs := r.GetInvs()
+	votes := resp.GetVotes()
+
+	if len(votes) != len(invs) {
+		return false
+	}
+
+	for i, v := range votes {
+		if invs[i].targetHash != v.GetHash() {
+			return false
+		}
+	}
+
+	for _, v := range votes {
 		vr, ok := p.voteRecords[v.GetHash()]
 		if !ok {
 			// We are not voting on this anymore
@@ -79,6 +114,10 @@ func (p *Processor) registerVotes(resp Response, updates *[]StatusUpdate) {
 			delete(p.voteRecords, v.GetHash())
 		}
 	}
+
+	p.nodeIDs[id] = struct{}{}
+
+	return true
 }
 
 func (p *Processor) getInvsForNextPoll() []Inv {
@@ -103,6 +142,11 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 	return invs
 }
 
+func (p *Processor) getSuitableNodeToQuery() NodeID {
+	return testPeer
+	// return random node from map of fake nodes
+}
+
 func (p *Processor) start() bool {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()
@@ -123,7 +167,7 @@ func (p *Processor) start() bool {
 				close(p.doneCh)
 				return
 			case <-t.C:
-				// Perform loop code
+				p.eventLoop()
 			}
 		}
 	}()
@@ -144,4 +188,16 @@ func (p *Processor) stop() bool {
 
 	p.isRunning = false
 	return true
+}
+
+func (p *Processor) eventLoop() {
+	invs := p.getInvsForNextPoll()
+	if len(invs) == 0 {
+		return
+	}
+
+	nodeID := p.getSuitableNodeToQuery()
+	p.queries[nodeID] = RequestRecord{time.Now().Unix(), invs}
+
+	// TODO: send to node
 }
