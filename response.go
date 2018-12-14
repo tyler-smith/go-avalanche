@@ -22,3 +22,20 @@ func (r Response) GetVotes() []Vote {
 func (r Response) GetRound() int64 {
 	return r.round
 }
+
+type RequestRecord struct {
+	timestamp int64
+	invs      []Inv
+}
+
+func NewRequestRecord(timestamp int64, invs []Inv) RequestRecord {
+	return RequestRecord{timestamp, invs}
+}
+
+func (r RequestRecord) GetTimestamp() int64 {
+	return r.timestamp
+}
+
+func (r RequestRecord) GetInvs() []Inv {
+	return r.invs
+}

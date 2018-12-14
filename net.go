@@ -1,18 +1,15 @@
 package avalanche
 
 type node struct {
-	id NodeID
-	// connman   *connman
+	id        NodeID
 	avalanche *Processor
-
-	quitCh chan (struct{})
-	doneCh chan (struct{})
+	quitCh    chan (struct{})
+	doneCh    chan (struct{})
 }
 
 func newNode(connman *connman, id NodeID) *node {
 	return &node{
-		id: id,
-		// connman:   connman,
+		id:        id,
 		avalanche: NewProcessor(connman),
 		quitCh:    make(chan (struct{})),
 		doneCh:    make(chan (struct{})),
@@ -22,23 +19,6 @@ func newNode(connman *connman, id NodeID) *node {
 func (n *node) handleRequest(poll Poll) *Response {
 	return n.avalanche.handlePoll(poll)
 }
-
-// func (n *node) start() {
-// 	go func() {
-// 		for {
-// 			select {
-// 			case <-n.quitCh:
-// 				close(n.doneCh)
-// 				return
-// 			}
-// 		}
-// 	}()
-// }
-
-// func (n *node) stop() {
-// 	close(n.quitCh)
-// 	<-n.doneCh
-// }
 
 type connman struct {
 	nodes map[NodeID]*node

@@ -1,7 +1,5 @@
 package avalanche
 
-import "fmt"
-
 type VoteRecord struct {
 	votes      uint8
 	consider   uint8
@@ -34,22 +32,9 @@ func (vr *VoteRecord) regsiterVote(err uint32) bool {
 	vr.consider = (vr.consider << 1) | boolToUint8(int32(err) >= 0)
 
 	yes := countBits8(vr.votes&vr.consider&0xff) > 6
-
-	fmt.Println(fmt.Sprintf("vote: %d, yes: %d", err, countBits8(vr.votes&vr.consider&0xff)))
-	// fmt.Println("vote:", err)
-	// fmt.Println("votes:", vr.votes)
-	// fmt.Println("consider:", vr.consider)
-	// fmt.Println("confidence:", vr.getConfidence())
-	// fmt.Println("yes:", countBits8(vr.votes&vr.consider&0xff))
-	// fmt.Println("no:", countBits8((-vr.votes-1)&vr.consider&0xff))
-
 	if !yes {
-		// fmt.Println("!yes", countBits8(vr.votes&vr.consider&0xff))
-		// (-x-1) is equal to C's ~x
 		no := countBits8((-vr.votes-1)&vr.consider&0xff) > 6
 		if !no {
-			fmt.Println("Inconclusive.")
-			// fmt.Println("!no", countBits8((-vr.votes-1)&vr.consider&0xff))
 			// The round is inconclusive
 			return false
 		}
@@ -57,7 +42,6 @@ func (vr *VoteRecord) regsiterVote(err uint32) bool {
 
 	// Vote is conclusive and agrees with our current state
 	if vr.isAccepted() == yes {
-		fmt.Println("Accepted.")
 		vr.confidence += 2
 		return vr.getConfidence() == AvalancheFinalizationScore
 	}
@@ -65,19 +49,10 @@ func (vr *VoteRecord) regsiterVote(err uint32) bool {
 	// Vote is conclusive but does not agree with our current state
 	vr.confidence = boolToUint16(yes)
 
-	fmt.Println("Vote flipped to", vr.isAccepted())
-
 	return true
 }
 
 func countBits8(i uint8) (count int) {
-	for ; i > 0; i &= (i - 1) {
-		count++
-	}
-	return count
-}
-
-func countBits16(i uint16) (count int) {
 	for ; i > 0; i &= (i - 1) {
 		count++
 	}

@@ -11,6 +11,10 @@ const (
 	AvalancheMaxElementPoll    = 4096
 )
 
+type NodeID int64
+
+const NoNode = NodeID(-1)
+
 type Status int
 
 const (
@@ -40,14 +44,6 @@ func blockForHash(h Hash) *Block {
 
 	return b
 }
-
-//
-// Development stubs
-//
-
-// TODO: replace:
-// Block with github.com/gcash/bchutil.Block
-// Hash with github.com/gcash/bchd/chaincfg/chainhash.Hash
 
 type Inv struct {
 	targetType string
