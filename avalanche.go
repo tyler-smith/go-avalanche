@@ -26,8 +26,8 @@ type StatusUpdate struct {
 }
 
 var staticTestBlockMap = map[Hash]*Block{
-	Hash(65): &Block{Hash(65), 1, 99},
-	Hash(66): &Block{Hash(66), 1, 100},
+	Hash(65): &Block{Hash(65), 1, 99, true},
+	Hash(66): &Block{Hash(66), 1, 100, true},
 }
 
 func blockForHash(h Hash) *Block {
@@ -49,6 +49,20 @@ func blockForHash(h Hash) *Block {
 // Block with github.com/gcash/bchutil.Block
 // Hash with github.com/gcash/bchd/chaincfg/chainhash.Hash
 
+type Inv struct {
+	targetType string
+	targetHash Hash
+}
+
+type Hash int
+
+type Block struct {
+	Hash   Hash
+	Height int
+	Work   int
+	Valid  bool
+}
+
 func sortBlockInvsByWork(invs []Inv) {
 	blocks := make(blocksByWork, len(invs))
 	for i, inv := range invs {
@@ -68,35 +82,3 @@ type blocksByWork []*Block
 func (a blocksByWork) Len() int           { return len(a) }
 func (a blocksByWork) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a blocksByWork) Less(i, j int) bool { return a[i].Work > a[j].Work }
-
-type Inv struct {
-	targetType string
-	targetHash Hash
-}
-
-type Block struct {
-	Hash   Hash
-	Height int
-	Work   int
-}
-
-type Hash int
-
-type Connman interface {
-	Nodes()
-	PushMessage()
-}
-
-type DummyConnman struct{}
-
-func (DummyConnman) Nodes() {}
-
-func (DummyConnman) PushMessage() {}
-
-// var testPeer = NodeID(42)
-
-var _isBlockValid = true
-
-func isBlockValid(h Hash) bool {
-	return _isBlockValid
-}

@@ -98,7 +98,7 @@ func TestBlockRegister(t *testing.T) {
 
 		updates   = []StatusUpdate{}
 		blockHash = Hash(65)
-		pindex    = blockHash
+		pindex    = blockForHash(blockHash)
 
 		noVote      = Response{votes: []Vote{Vote{1, blockHash}}}
 		yesVote     = Response{votes: []Vote{Vote{0, blockHash}}}
@@ -118,7 +118,7 @@ func TestBlockRegister(t *testing.T) {
 	// Add a new block. Check that it's added to the polls
 	assertTrue(t, p.addBlockToReconcile(pindex))
 	assertBlockPollCount(t, p, 1)
-	assertPollExistsForBlock(t, p, blockHash)
+	assertPollExistsForBlock(t, p, pindex)
 
 	// Newly added blocks are also considered rejected
 	assertTrue(t, p.isAccepted(pindex))
@@ -175,7 +175,7 @@ func TestBlockRegister(t *testing.T) {
 
 	// As long as it is not finalized, we poll.
 	assertBlockPollCount(t, p, 1)
-	assertPollExistsForBlock(t, p, blockHash)
+	assertPollExistsForBlock(t, p, pindex)
 
 	// Now finalize the decision.
 	p.eventLoop()
@@ -195,7 +195,7 @@ func TestBlockRegister(t *testing.T) {
 	// Now let's undo this and finalize rejection.
 	assertTrue(t, p.addBlockToReconcile(pindex))
 	assertBlockPollCount(t, p, 1)
-	assertPollExistsForBlock(t, p, blockHash)
+	assertPollExistsForBlock(t, p, pindex)
 
 	for i := 0; i < 6; i++ {
 		p.eventLoop()
@@ -227,7 +227,7 @@ func TestBlockRegister(t *testing.T) {
 
 	// As long as it is not finalized, we poll.
 	assertBlockPollCount(t, p, 1)
-	assertPollExistsForBlock(t, p, blockHash)
+	assertPollExistsForBlock(t, p, pindex)
 
 	// Now finalize the decision.
 	p.eventLoop()
@@ -260,10 +260,10 @@ func TestMultiBlockRegister(t *testing.T) {
 
 		updates = []StatusUpdate{}
 
-		pindexA    = Hash(65)
-		blockHashA = pindexA
-		pindexB    = Hash(66)
-		blockHashB = pindexB
+		blockHashA = Hash(65)
+		pindexA    = blockForHash(blockHashA)
+		blockHashB = Hash(66)
+		pindexB    = blockForHash(blockHashB)
 
 		// blockHash = Hash(65)
 		// pindex    = blockHash
@@ -467,21 +467,21 @@ func assertBlockPollCount(t *testing.T, p *Processor, count int) {
 	}
 }
 
-func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash Hash) {
+func assertPollExistsForBlock(t *testing.T, p *Processor, b *Block) {
 	found := false
 	for _, inv := range p.getInvsForNextPoll() {
-		if inv.targetHash == blockHash {
+		if inv.targetHash == b.Hash {
 			found = true
 		}
 	}
 
 	if !found {
-		t.Fatal("No inv for hash", blockHash)
+		t.Fatal("No inv for hash", b.Hash)
 	}
 }
 
-func assertConfidence(t *testing.T, p *Processor, pindex Hash, expectedC uint16) {
-	if c := p.getConfidence(pindex); c != expectedC {
+func assertConfidence(t *testing.T, p *Processor, b *Block, expectedC uint16) {
+	if c := p.getConfidence(b); c != expectedC {
 		t.Fatal("Incorrect confidence. Got:", c, "Wanted:", expectedC)
 	}
 }
@@ -494,8 +494,8 @@ func TestPollAndResponse(t *testing.T) {
 
 		updates = []StatusUpdate{}
 
-		pindex    = Hash(65)
-		blockHash = pindex
+		blockHash = Hash(65)
+		pindex    = blockForHash(blockHash)
 
 		// noVote      = Response{0, votes: []Vote{Vote{1, blockHash}}}
 		// yesVote = Response{0, 0, []Vote{Vote{0, blockHash}}}
@@ -587,8 +587,8 @@ func TestPollAndResponse(t *testing.T) {
 	assertUpdateCount(0)
 
 	// Out of order response are rejected.
-	pindexB := Hash(66)
-	blockHashB := pindexB
+	blockHashB := Hash(66)
+	pindexB := blockForHash(blockHashB)
 	assertTrue(t, p.addBlockToReconcile(pindexB))
 
 	p.eventLoop()

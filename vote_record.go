@@ -9,10 +9,9 @@ type VoteRecord struct {
 }
 
 func NewVoteRecord(accepted bool) *VoteRecord {
-	// return &VoteRecord{}
 	return &VoteRecord{
-		votes: 0xaa,
-		// confidence: boolToUint16(accepted),
+		votes:      0xaa,
+		confidence: boolToUint16(accepted),
 	}
 }
 
