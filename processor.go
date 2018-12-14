@@ -54,22 +54,22 @@ func (p *Processor) GetRound() int64 {
 	return p.round
 }
 
-func (p *Processor) addBlockToReconcile(b *Block) bool {
-	if !p.isWorthyPolling(b) {
+func (p *Processor) addBlockToReconcile(t Target) bool {
+	if !p.isWorthyPolling(t) {
 		return false
 	}
 
-	_, ok := p.voteRecords[b.Hash]
+	_, ok := p.voteRecords[t.Hash()]
 	if ok {
 		return false
 	}
 
-	p.voteRecords[b.Hash] = NewVoteRecord(true)
+	p.voteRecords[t.Hash()] = NewVoteRecord(true)
 	return true
 }
 
-func (p *Processor) isAccepted(b *Block) bool {
-	if vr, ok := p.voteRecords[b.Hash]; ok {
+func (p *Processor) isAccepted(t Target) bool {
+	if vr, ok := p.voteRecords[t.Hash()]; ok {
 		return vr.isAccepted()
 	}
 	return false
@@ -156,8 +156,8 @@ func (p *Processor) registerVotes(id NodeID, resp Response, updates *[]StatusUpd
 	return true
 }
 
-func (p *Processor) getConfidence(b *Block) uint16 {
-	vr, ok := p.voteRecords[b.Hash]
+func (p *Processor) getConfidence(t Target) uint16 {
+	vr, ok := p.voteRecords[t.Hash()]
 	if !ok {
 		panic("VoteRecord not found")
 	}
@@ -174,7 +174,7 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 			continue
 		}
 
-		// Obviously do not poll if the block is not worth polling
+		// Obviously do not poll if the target is not worth polling
 		if !p.isWorthyPolling(blockForHash(idx)) {
 			continue
 		}
@@ -290,6 +290,6 @@ func (p *Processor) handlePoll(poll Poll) *Response {
 	return &Response{}
 }
 
-func (p *Processor) isWorthyPolling(b *Block) bool {
-	return b.Valid
+func (p *Processor) isWorthyPolling(t Target) bool {
+	return t.Valid()
 }

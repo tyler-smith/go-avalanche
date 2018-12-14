@@ -470,13 +470,13 @@ func assertBlockPollCount(t *testing.T, p *Processor, count int) {
 func assertPollExistsForBlock(t *testing.T, p *Processor, b *Block) {
 	found := false
 	for _, inv := range p.getInvsForNextPoll() {
-		if inv.targetHash == b.Hash {
+		if inv.targetHash == b.Hash() {
 			found = true
 		}
 	}
 
 	if !found {
-		t.Fatal("No inv for hash", b.Hash)
+		t.Fatal("No inv for hash", b.Hash())
 	}
 }
 
