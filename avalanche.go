@@ -9,6 +9,7 @@ const (
 	AvalancheFinalizationScore = 128
 	AvalancheTimeStep          = 10 * time.Millisecond
 	AvalancheMaxElementPoll    = 4096
+	AvalancheRequestTimeout    = 1 * time.Minute
 )
 
 type NodeID int64
@@ -106,3 +107,24 @@ type blocksByWork []*Block
 func (a blocksByWork) Len() int           { return len(a) }
 func (a blocksByWork) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a blocksByWork) Less(i, j int) bool { return a[i].work > a[j].work }
+
+// Clock stub for tests
+type timeGetter interface {
+	Now() time.Time
+}
+
+type realTimeGetter struct{}
+
+func (realTimeGetter) Now() time.Time {
+	return time.Now()
+}
+
+type stubTimeGetter struct {
+	t time.Time
+}
+
+func (r stubTimeGetter) Now() time.Time {
+	return r.t
+}
+
+var clock timeGetter = realTimeGetter{}

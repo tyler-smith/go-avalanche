@@ -54,6 +54,11 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 	if !ok {
 		return false
 	}
+
+	if time.Unix(r.timestamp, 0).Add(AvalancheRequestTimeout).Before(clock.Now()) {
+		delete(p.queries, key)
+		return false
+	}
 	delete(p.queries, key)
 
 	invs := r.GetInvs()
@@ -215,7 +220,7 @@ func (p *Processor) eventLoop() {
 	}
 
 	nodeID := p.getSuitableNodeToQuery()
-	p.queries[queryKey(p.round, nodeID)] = RequestRecord{time.Now().Unix(), invs}
+	p.queries[queryKey(p.round, nodeID)] = NewRequestRecord(clock.Now().Unix(), invs)
 }
 
 func (p *Processor) handlePoll(poll Poll) *Response {

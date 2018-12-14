@@ -3,6 +3,7 @@ package avalanche
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 var (
@@ -503,11 +504,6 @@ func TestPollAndResponse(t *testing.T) {
 
 		blockHash = Hash(65)
 		pindex    = blockForHash(blockHash)
-
-		// noVote      = Response{0, votes: []Vote{Vote{1, blockHash}}}
-		// yesVote = Response{0, 0, []Vote{Vote{0, blockHash}}}
-		// yesVoteForB = Response{0, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
-		// neutralVote = Response{0, votes: []Vote{Vote{negativeOne, blockHash}}}
 	)
 	connman.addNode(avanode)
 
@@ -611,14 +607,17 @@ func TestPollAndResponse(t *testing.T) {
 	assertUpdateCount(0)
 	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
 
-	// TODO: Finish this after using *Block for pindex's
 	// When a block is marked invalid, stop polling.
-	// _isBlockValid = false
-	// p.eventLoop()
-	// vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
-	// assertTrue(t, p.registerVotes(avanode, vote, &updates))
-	// assertUpdateCount(0)
-	// assertTrue(t, p.getSuitableNodeToQuery() == avanode)
+	pindexB.valid = false
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	assertTrue(t, p.RegisterVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
 
 	// Expire requests after some time.
+	p.eventLoop()
+	clock = stubTimeGetter{time.Now().Add(1 * time.Minute)}
+	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
 }
