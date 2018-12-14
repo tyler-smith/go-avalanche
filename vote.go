@@ -1,21 +1,18 @@
 package avalanche
 
 type Vote struct {
-	err uint32
-
-	// TODO: make this actually a hash
+	err  uint32 // this is called "error" in abc for some reason
 	hash Hash
-	// hash [64]byte
 }
 
-func NewVote() Vote {
-	return Vote{}
+func NewVote(err uint32, hash Hash) Vote {
+	return Vote{err, hash}
 }
 
 func (v Vote) GetHash() Hash {
 	return v.hash
 }
 
-func (v Vote) IsValid() bool {
-	return v.err == 0
+func (v Vote) GetError() uint32 {
+	return v.err
 }

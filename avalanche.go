@@ -93,4 +93,10 @@ func (DummyConnman) Nodes() {}
 
 func (DummyConnman) PushMessage() {}
 
-var testPeer = NodeID(42)
+// var testPeer = NodeID(42)
+
+var _isBlockValid = true
+
+func isBlockValid(h Hash) bool {
+	return _isBlockValid
+}

@@ -1,6 +1,7 @@
 package avalanche
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -26,8 +27,12 @@ func (r RequestRecord) GetInvs() []Inv {
 
 type Processor struct {
 	voteRecords map[Hash]*VoteRecord
-	queries     map[NodeID]RequestRecord
-	nodeIDs     map[NodeID]struct{}
+	round       int64
+	queries     map[string]RequestRecord
+	// queries     map[NodeID]RequestRecord
+	nodeIDs map[NodeID]struct{}
+
+	connman *connman
 
 	runMu     sync.Mutex
 	isRunning bool
@@ -35,21 +40,31 @@ type Processor struct {
 	doneCh    chan (struct{})
 }
 
-func NewProcessor() *Processor {
+func NewProcessor(connman *connman) *Processor {
 	return &Processor{
 		voteRecords: map[Hash]*VoteRecord{},
-		queries:     map[NodeID]RequestRecord{},
+		queries:     map[string]RequestRecord{},
 		nodeIDs:     map[NodeID]struct{}{},
+
+		connman: connman,
 	}
 }
 
+func (p *Processor) GetRound() int64 {
+	return p.round
+}
+
 func (p *Processor) addBlockToReconcile(hash Hash) bool {
+	if !p.isWorthyPolling(hash) {
+		return false
+	}
+
 	_, ok := p.voteRecords[hash]
 	if ok {
 		return false
 	}
 
-	p.voteRecords[hash] = NewVoteRecord()
+	p.voteRecords[hash] = NewVoteRecord(true)
 	return true
 }
 
@@ -60,34 +75,53 @@ func (p *Processor) isAccepted(hash Hash) bool {
 	return false
 }
 
+func queryKey(round int64, nodeID NodeID) string {
+	return fmt.Sprintf("%d|%d", round, nodeID)
+}
+
 func (p *Processor) registerVotes(id NodeID, resp Response, updates *[]StatusUpdate) bool {
-	r, ok := p.queries[id]
+	// fmt.Println("looking for query for", id)
+	key := queryKey(resp.GetRound(), id)
+	r, ok := p.queries[key]
 	if !ok {
+		fmt.Println("did not find query for", id)
 		return false
 	}
-	delete(p.queries, id)
+	fmt.Println("deleting query 0")
+	delete(p.queries, key)
+
+	// _nextNodeToQuery++
+	// fmt.Println("incremented next node")
+	// fmt.Println("found query for", id)
 
 	invs := r.GetInvs()
 	votes := resp.GetVotes()
 
 	if len(votes) != len(invs) {
+		fmt.Println("wrong len:", len(votes), len(invs))
 		return false
 	}
 
 	for i, v := range votes {
 		if invs[i].targetHash != v.GetHash() {
+			fmt.Println("wrong hash:", invs[i].targetHash, v.GetHash())
 			return false
 		}
 	}
-
+	// fmt.Println("processing votes", votes)
 	for _, v := range votes {
+		// fmt.Println("vote for:", v.GetHash(), v.GetError())
+
 		vr, ok := p.voteRecords[v.GetHash()]
 		if !ok {
+			fmt.Println("no longer voting on this")
 			// We are not voting on this anymore
 			continue
 		}
 
-		if !vr.regsiterVote(v.IsValid()) {
+		fmt.Println(v.GetHash())
+		if !vr.regsiterVote(v.GetError()) {
+			// fmt.Println("no extra data")
 			// This vote did not provide any extra information
 			continue
 		}
@@ -107,6 +141,8 @@ func (p *Processor) registerVotes(id NodeID, resp Response, updates *[]StatusUpd
 			status = StatusInvalid
 		}
 
+		fmt.Println("adding status:", status)
+
 		*updates = append(*updates, StatusUpdate{v.GetHash(), status})
 
 		// When we finalize we want to remove our vote record
@@ -120,12 +156,26 @@ func (p *Processor) registerVotes(id NodeID, resp Response, updates *[]StatusUpd
 	return true
 }
 
+func (p *Processor) getConfidence(hash Hash) uint16 {
+	vr, ok := p.voteRecords[hash]
+	if !ok {
+		panic("VoteRecord not found")
+	}
+
+	return vr.getConfidence()
+}
+
 func (p *Processor) getInvsForNextPoll() []Inv {
 	invs := make([]Inv, 0, len(p.voteRecords))
 
 	for idx, r := range p.voteRecords {
 		if r.hasFinalized() {
 			// If this has finalized we can just skip.
+			continue
+		}
+
+		// Obviously do not poll if the block is not worth polling
+		if !p.isWorthyPolling(idx) {
 			continue
 		}
 
@@ -142,9 +192,20 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 	return invs
 }
 
+// var _nextNodeToQuery = 0
+
+const NoNode = NodeID(-1)
+
 func (p *Processor) getSuitableNodeToQuery() NodeID {
-	return testPeer
-	// return random node from map of fake nodes
+	// return NodeID(0)
+	nodeIDs := p.connman.nodesIDs()
+
+	if len(nodeIDs) == 0 {
+		return NoNode
+	}
+	return nodeIDs[0]
+	// fmt.Println("nodeid:", nodeIDs[_nextNodeToQuery%len(nodeIDs)])
+	// return nodeIDs[_nextNodeToQuery%len(nodeIDs)]
 }
 
 func (p *Processor) start() bool {
@@ -197,7 +258,38 @@ func (p *Processor) eventLoop() {
 	}
 
 	nodeID := p.getSuitableNodeToQuery()
-	p.queries[nodeID] = RequestRecord{time.Now().Unix(), invs}
+	p.queries[queryKey(p.round, nodeID)] = RequestRecord{time.Now().Unix(), invs}
+	// fmt.Println("created query for", nodeID)
+	// Send to node and handle response
+	// In a real situation the send and receive will be async
+	// resp := p.connman.sendRequest(nodeID, Poll{
+	// 	round: p.round,
+	// 	invs:  invs,
+	// })
 
-	// TODO: send to node
+	// p.registerVotes(nodeID, *resp, &[]StatusUpdate{})
+}
+
+func (p *Processor) handlePoll(poll Poll) *Response {
+	// TODO: figure out the 16bit vs 32bit discrepency
+
+	votes := make([]Vote, 0, len(poll.invs))
+	var (
+		vr *VoteRecord
+		ok bool
+	)
+	for _, inv := range poll.invs {
+		vr, ok = p.voteRecords[inv.targetHash]
+		if !ok {
+			panic("VoteRecord not found")
+		}
+
+		votes = append(votes, Vote{err: uint32(vr.votes), hash: inv.targetHash})
+	}
+
+	return &Response{}
+}
+
+func (p *Processor) isWorthyPolling(h Hash) bool {
+	return isBlockValid(h)
 }

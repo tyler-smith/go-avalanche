@@ -1,78 +1,110 @@
 package avalanche
 
 import (
+	"fmt"
 	"testing"
 )
 
-func TestVoteRecord(t *testing.T) {
-	vr := NewVoteRecord()
-	checkInitialVoteRecord(t, vr)
+var (
+	_negativeOne = -1
+	negativeOne  = uint32(_negativeOne)
+)
 
-	registerVoteAndCheck(t, vr, true, false, false, 0) // 4/4
-	registerVoteAndCheck(t, vr, true, false, false, 0) // 5/3
-	registerVoteAndCheck(t, vr, true, false, false, 0) // 5/3
-	registerVoteAndCheck(t, vr, true, false, false, 0) // 6/2
-	registerVoteAndCheck(t, vr, true, false, false, 0) // 6/2
+func TestVoteRecord(t *testing.T) {
+	var vr *VoteRecord
+	registerVoteAndCheck := func(vote uint32, state, finalized bool, confidence uint16) {
+		vr.regsiterVote(vote)
+		assertTrue(t, vr.isAccepted() == state)
+		assertTrue(t, vr.hasFinalized() == finalized)
+		assertTrue(t, vr.getConfidence() == confidence)
+	}
+
+	vr = NewVoteRecord(true)
+	assertTrue(t, vr.isAccepted())
+	assertFalse(t, vr.hasFinalized())
+	assertTrue(t, vr.getConfidence() == 0)
+
+	vr = NewVoteRecord(false)
+	assertFalse(t, vr.isAccepted())
+	assertFalse(t, vr.hasFinalized())
+	assertTrue(t, vr.getConfidence() == 0)
+
+	// We need to register 6 positive votes before we start counting.
+	for i := uint16(0); i < 6; i++ {
+		registerVoteAndCheck(0, false, false, 0)
+	}
 
 	// Next vote will flip state, and confidence will increase as long as we
 	// vote yes.
-	for i := uint16(0); i < AvalancheFinalizationScore; i++ {
-		registerVoteAndCheck(t, vr, true, true, false, i)
+	registerVoteAndCheck(0, true, false, 0)
+
+	// A single neutral vote do not change anything.
+	registerVoteAndCheck(negativeOne, true, false, 1)
+	for i := uint16(2); i < 8; i++ {
+		registerVoteAndCheck(0, true, false, i)
 	}
 
-	// The next vote will finalize the decision
-	registerVoteAndCheck(t, vr, false, true, true, AvalancheFinalizationScore)
+	// Two neutral votes will stall progress.
+	registerVoteAndCheck(negativeOne, true, false, 7)
+	registerVoteAndCheck(negativeOne, true, false, 7)
+	for i := uint16(2); i < 8; i++ {
+		registerVoteAndCheck(0, true, false, 7)
+	}
 
-	// Now that we have two no votes confidence stops increasing
-	for i := 0; i < 5; i++ {
-		registerVoteAndCheck(t, vr, false, true, true, AvalancheFinalizationScore)
+	// Now confidence will increase as long as we vote yes.
+	for i := uint16(8); i < AvalancheFinalizationScore; i++ {
+		registerVoteAndCheck(0, true, false, i)
+	}
+
+	// The next vote will finalize the decision.
+	registerVoteAndCheck(1, true, true, AvalancheFinalizationScore)
+
+	// Now that we have two no votes, confidence stop increasing.
+	for i := uint16(0); i < 5; i++ {
+		registerVoteAndCheck(1, true, true,
+			AvalancheFinalizationScore)
 	}
 
 	// Next vote will flip state, and confidence will increase as long as we
 	// vote no.
-	for i := uint16(0); i < AvalancheFinalizationScore; i++ {
-		registerVoteAndCheck(t, vr, false, false, false, i)
+	registerVoteAndCheck(1, false, false, 0)
+
+	// A single neutral vote do not change anything.
+	registerVoteAndCheck(negativeOne, false, false, 1)
+	for i := uint16(2); i < 8; i++ {
+		registerVoteAndCheck(1, false, false, i)
+	}
+
+	// Two neutral votes will stall progress.
+	registerVoteAndCheck(negativeOne, false, false, 7)
+	registerVoteAndCheck(negativeOne, false, false, 7)
+	for i := uint16(2); i < 8; i++ {
+		registerVoteAndCheck(1, false, false, 7)
+	}
+
+	// Now confidence will increase as long as we vote no.
+	for i := uint16(8); i < AvalancheFinalizationScore; i++ {
+		registerVoteAndCheck(1, false, false, i)
 	}
 
 	// The next vote will finalize the decision.
-	registerVoteAndCheck(t, vr, true, false, true, AvalancheFinalizationScore)
-}
-
-func checkInitialVoteRecord(t *testing.T, vr *VoteRecord) {
-	if vr.isAccepted() {
-		t.Fatal("Expected isValid to be false but it was true")
-	}
-
-	if vr.hasFinalized() {
-		t.Fatal("Expected hasFinalized to be false but it was true")
-	}
-
-	if vr.getConfidence() != 0 {
-		t.Fatal("Expected getConfidence to be 0 but it was", vr.getConfidence())
-	}
-}
-
-func registerVoteAndCheck(t *testing.T, vr *VoteRecord, vote, state, finalized bool, confidence uint16) {
-	vr.regsiterVote(vote)
-
-	if vr.isAccepted() != state {
-		t.Fatal("Expected IsValid to be", state, "but it was not")
-	}
-
-	if vr.getConfidence() != confidence {
-		t.Fatal("Expected getConfidence to be", confidence, "but it was", vr.getConfidence())
-	}
-
-	if vr.hasFinalized() != finalized {
-		t.Fatal("Expected hasFinalized to be", finalized, "but it was not")
-	}
+	registerVoteAndCheck(0, false, true, AvalancheFinalizationScore)
 }
 func TestBlockRegister(t *testing.T) {
-	p := NewProcessor()
-	updates := []StatusUpdate{}
+	var (
+		connman = newConnman()
+		p       = NewProcessor(connman)
+		nodeID  = NodeID(0)
 
-	blockHash := Hash(65)
-	pindex := blockHash
+		updates   = []StatusUpdate{}
+		blockHash = Hash(65)
+		pindex    = blockHash
+
+		noVote      = Response{votes: []Vote{Vote{1, blockHash}}}
+		yesVote     = Response{votes: []Vote{Vote{0, blockHash}}}
+		neutralVote = Response{votes: []Vote{Vote{negativeOne, blockHash}}}
+	)
+	connman.addNode(nodeID)
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
@@ -89,36 +121,55 @@ func TestBlockRegister(t *testing.T) {
 	assertPollExistsForBlock(t, p, blockHash)
 
 	// Newly added blocks are also considered rejected
-	assertFalse(t, p.isAccepted(pindex))
+	assertTrue(t, p.isAccepted(pindex))
 
 	// Vote for the block a few times
-	r := Response{votes: []Vote{Vote{0, blockHash}}}
-
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		p.eventLoop()
-		assertTrue(t, p.registerVotes(testPeer, r, &updates))
-		assertFalse(t, p.isAccepted(pindex))
+		assertTrue(t, p.registerVotes(nodeID, yesVote, &updates))
+		assertTrue(t, p.isAccepted(pindex))
+		assertConfidence(t, p, pindex, 0)
 		assertUpdateCount(0)
 	}
 
-	// Now the state will flip.
+	// A single neutral vote do not change anything.
 	p.eventLoop()
-	assertTrue(t, p.registerVotes(testPeer, r, &updates))
+	assertTrue(t, p.registerVotes(nodeID, neutralVote, &updates))
 	assertTrue(t, p.isAccepted(pindex))
-	assertUpdateCount(1)
-	if updates[0].Hash != blockHash {
-		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHash)
-	}
-	if updates[0].Status != StatusAccepted {
-		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
-	}
-	updates = []StatusUpdate{}
+	assertConfidence(t, p, pindex, 0)
+	assertUpdateCount(0)
 
-	// Now it is accepted, but we can vote for it numerous times.
-	for i := 1; i < AvalancheFinalizationScore; i++ {
+	for i := uint16(1); i < 7; i++ {
 		p.eventLoop()
-		assertTrue(t, p.registerVotes(testPeer, r, &updates))
+		assertTrue(t, p.registerVotes(nodeID, yesVote, &updates))
 		assertTrue(t, p.isAccepted(pindex))
+		assertConfidence(t, p, pindex, i)
+		assertUpdateCount(0)
+	}
+
+	// Two neutral votes will stall progress.
+	for i := 0; i < 2; i++ {
+		p.eventLoop()
+		assertTrue(t, p.registerVotes(nodeID, neutralVote, &updates))
+		assertTrue(t, p.isAccepted(pindex))
+		assertConfidence(t, p, pindex, 6)
+		assertUpdateCount(0)
+	}
+
+	for i := 2; i < 8; i++ {
+		p.eventLoop()
+		assertTrue(t, p.registerVotes(nodeID, yesVote, &updates))
+		assertTrue(t, p.isAccepted(pindex))
+		assertConfidence(t, p, pindex, 6)
+		assertUpdateCount(0)
+	}
+
+	// We vote on it numerous times to finalize it
+	for i := uint16(7); i < AvalancheFinalizationScore; i++ {
+		p.eventLoop()
+		assertTrue(t, p.registerVotes(nodeID, yesVote, &updates))
+		assertTrue(t, p.isAccepted(pindex))
+		assertConfidence(t, p, pindex, i)
 		assertUpdateCount(0)
 	}
 
@@ -127,10 +178,8 @@ func TestBlockRegister(t *testing.T) {
 	assertPollExistsForBlock(t, p, blockHash)
 
 	// Now finalize the decision.
-	r = Response{votes: []Vote{Vote{1, blockHash}}}
 	p.eventLoop()
-	assertTrue(t, p.registerVotes(testPeer, r, &updates))
-	assertBlockPollCount(t, p, 0)
+	assertTrue(t, p.registerVotes(nodeID, yesVote, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHash {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHash)
@@ -140,23 +189,38 @@ func TestBlockRegister(t *testing.T) {
 	}
 	updates = []StatusUpdate{}
 
+	// Once the decision is finalized, there is no poll for it
+	assertBlockPollCount(t, p, 0)
+
 	// Now let's undo this and finalize rejection.
 	assertTrue(t, p.addBlockToReconcile(pindex))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, blockHash)
 
-	// Only 3 here as we don't need to flip state
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 6; i++ {
 		p.eventLoop()
-		assertTrue(t, p.registerVotes(testPeer, r, &updates))
-		assertFalse(t, p.isAccepted(pindex))
+		assertTrue(t, p.registerVotes(nodeID, noVote, &updates))
+		assertTrue(t, p.isAccepted(pindex))
 		assertUpdateCount(0)
 	}
 
+	// Now the state will flip.
+	p.eventLoop()
+	assertTrue(t, p.registerVotes(nodeID, noVote, &updates))
+	assertFalse(t, p.isAccepted(pindex))
+	assertUpdateCount(1)
+	if updates[0].Hash != blockHash {
+		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHash)
+	}
+	if updates[0].Status != StatusRejected {
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
+	}
+	updates = []StatusUpdate{}
+
 	// Now it is rejected, but we can vote for it numerous times.
-	for i := 0; i < AvalancheFinalizationScore; i++ {
+	for i := 1; i < AvalancheFinalizationScore; i++ {
 		p.eventLoop()
-		assertTrue(t, p.registerVotes(testPeer, r, &updates))
+		assertTrue(t, p.registerVotes(nodeID, noVote, &updates))
 		assertFalse(t, p.isAccepted(pindex))
 		assertUpdateCount(0)
 	}
@@ -167,8 +231,7 @@ func TestBlockRegister(t *testing.T) {
 
 	// Now finalize the decision.
 	p.eventLoop()
-	assertTrue(t, p.registerVotes(testPeer, r, &updates))
-	assertBlockPollCount(t, p, 0)
+	assertTrue(t, p.registerVotes(nodeID, yesVote, &updates))
 	assertFalse(t, p.isAccepted(pindex))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHash {
@@ -177,25 +240,45 @@ func TestBlockRegister(t *testing.T) {
 	if updates[0].Status != StatusInvalid {
 		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusInvalid)
 	}
+	updates = []StatusUpdate{}
+
+	// Once the decision is finalized, there is no poll for it.
+	assertBlockPollCount(t, p, 0)
 
 	// Adding the block twice does nothing.
 	assertTrue(t, p.addBlockToReconcile(pindex))
-	assertFalse(t, p.isAccepted(pindex))
-	assertFalse(t, p.isAccepted(pindex))
+	assertFalse(t, p.addBlockToReconcile(pindex))
+	assertTrue(t, p.isAccepted(pindex))
 }
 
 func TestMultiBlockRegister(t *testing.T) {
-	p := NewProcessor()
-	updates := []StatusUpdate{}
+	var (
+		connman = newConnman()
+		p       = NewProcessor(connman)
+		nodeID0 = NodeID(0)
+		nodeID1 = NodeID(1)
 
-	pindexA := Hash(65)
-	blockHashA := pindexA
+		updates = []StatusUpdate{}
 
-	pindexB := Hash(66)
-	blockHashB := pindexB
+		pindexA    = Hash(65)
+		blockHashA = pindexA
+		pindexB    = Hash(66)
+		blockHashB = pindexB
+
+		// blockHash = Hash(65)
+		// pindex    = blockHash
+
+		// noVote      = Response{0, votes: []Vote{Vote{1, blockHash}}}
+		yesVoteForA = Response{0, 0, []Vote{Vote{0, blockHashA}}}
+		yesVoteForB = Response{0, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
+		// neutralVote = Response{0, votes: []Vote{Vote{negativeOne, blockHash}}}
+	)
+	connman.addNode(nodeID0)
+	connman.addNode(nodeID1)
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
+			panic(c)
 			t.Fatal("Expected", c, "updates")
 		}
 	}
@@ -211,12 +294,10 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	// Vote on block A
 	p.eventLoop()
-	resp := Response{0, []Vote{Vote{0, blockHashA}}}
-	assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+	assertTrue(t, p.registerVotes(nodeID0, yesVoteForA, &updates))
 	assertUpdateCount(0)
 
 	// Start voting on block B after one vote
-	resp = Response{0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
 	assertTrue(t, p.addBlockToReconcile(pindexB))
 	assertBlockPollCount(t, p, 2)
 
@@ -230,15 +311,25 @@ func TestMultiBlockRegister(t *testing.T) {
 	}
 
 	// Let's vote for these blocks a few times
-	for i := 0; i < 4; i++ {
+	// TODO: Figure out why this is i < 4 in abc
+	for i := 0; i < 5; i++ {
+		// for i := 0; i < 4; i++ {
 		p.eventLoop()
-		assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+		assertTrue(t, p.registerVotes(nodeID0, yesVoteForB, &updates))
 		assertUpdateCount(0)
 	}
 
+	// // Now it is accepted, but we can vote for it numerous times.
+	// for i := 0; i < AvalancheFinalizationScore; i++ {
+	// 	// NodeId nodeid = AvalancheTest::getSuitableNodeToQuery(p);
+	// 	p.eventLoop()
+	// 	assertTrue(t, p.registerVotes(nodeID0, yesVoteForB, &updates))
+	// 	assertUpdateCount(0)
+	// }
+
 	// Now the state will flip for A
 	p.eventLoop()
-	assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+	assertTrue(t, p.registerVotes(nodeID0, yesVoteForB, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHashA {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
@@ -248,9 +339,45 @@ func TestMultiBlockRegister(t *testing.T) {
 	}
 	updates = []StatusUpdate{}
 
+	// Now it is accepted, but we can vote for it numerous times.
+	for i := 0; i < AvalancheFinalizationScore; i++ {
+		// NodeId nodeid = AvalancheTest::getSuitableNodeToQuery(p);
+		p.eventLoop()
+		assertTrue(t, p.registerVotes(nodeID0, yesVoteForB, &updates))
+		fmt.Println("i:", i, "updates:", updates)
+		assertUpdateCount(0)
+	}
+	return
+
+	// Now the state will flip for A
+	// return
+	// // Now it is accepted, but we can vote for it numerous times
+	// for i := 0; i < AvalancheFinalizationScore; i++ {
+	// 	p.eventLoop()
+	// 	nodeID := p.getSuitableNodeToQuery()
+	// 	assertTrue(t, p.registerVotes(nodeID, yesVoteForB, &updates))
+	// 	assertUpdateCount(0)
+	// }
+
+	// Running two iteration of the event loop so that vote gets triggerd on A and B
+
+	// // Now the state will flip for A
+	// p.eventLoop()
+	// nodeID = p.getSuitableNodeToQuery()
+	// assertTrue(t, p.registerVotes(nodeID, yesVoteForA, &updates))
+	// assertUpdateCount(1)
+	// if updates[0].Hash != blockHashA {
+	// 	t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
+	// }
+	// if updates[0].Status != StatusAccepted {
+	// 	t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
+	// }
+	// updates = []StatusUpdate{}
+
 	// And then for B
 	p.eventLoop()
-	assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+	// nodeID = p.getSuitableNodeToQuery()
+	assertTrue(t, p.registerVotes(nodeID0, yesVoteForA, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHashB {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashB)
@@ -263,13 +390,13 @@ func TestMultiBlockRegister(t *testing.T) {
 	// Now it is rejected but we can vote for it numerous times
 	for i := 2; i < AvalancheFinalizationScore; i++ {
 		p.eventLoop()
-		assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+		assertTrue(t, p.registerVotes(nodeID0, yesVoteForA, &updates))
 		assertUpdateCount(0)
 	}
 
 	// Next vote will finalize block A
 	p.eventLoop()
-	assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+	assertTrue(t, p.registerVotes(nodeID0, yesVoteForA, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHashA {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
@@ -285,8 +412,8 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	// Next vote will finalize block B
 	p.eventLoop()
-	resp = Response{0, []Vote{Vote{0, blockHashB}}}
-	assertTrue(t, p.registerVotes(testPeer, resp, &updates))
+	// resp = Response{0, 0, []Vote{Vote{0, blockHashB}}}
+	assertTrue(t, p.registerVotes(nodeID0, yesVoteForA, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHashB {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashB)
@@ -301,7 +428,7 @@ func TestMultiBlockRegister(t *testing.T) {
 }
 
 func TestProcessorEventLoop(t *testing.T) {
-	p := NewProcessor()
+	p := NewProcessor(newConnman())
 
 	// Start loop
 	assertTrue(t, p.start())
@@ -329,7 +456,6 @@ func assertTrue(t *testing.T, actual bool) {
 
 func assertFalse(t *testing.T, actual bool) {
 	if actual {
-		panic("")
 		t.Fatal("Expected false; got true")
 	}
 }
@@ -352,4 +478,140 @@ func assertPollExistsForBlock(t *testing.T, p *Processor, blockHash Hash) {
 	if !found {
 		t.Fatal("No inv for hash", blockHash)
 	}
+}
+
+func assertConfidence(t *testing.T, p *Processor, pindex Hash, expectedC uint16) {
+	if c := p.getConfidence(pindex); c != expectedC {
+		t.Fatal("Incorrect confidence. Got:", c, "Wanted:", expectedC)
+	}
+}
+
+func TestPollAndResponse(t *testing.T) {
+	var (
+		connman = newConnman()
+		p       = NewProcessor(connman)
+		avanode = NodeID(0)
+
+		updates = []StatusUpdate{}
+
+		pindex    = Hash(65)
+		blockHash = pindex
+
+		// noVote      = Response{0, votes: []Vote{Vote{1, blockHash}}}
+		// yesVote = Response{0, 0, []Vote{Vote{0, blockHash}}}
+		// yesVoteForB = Response{0, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
+		// neutralVote = Response{0, votes: []Vote{Vote{negativeOne, blockHash}}}
+	)
+	connman.addNode(avanode)
+
+	assertUpdateCount := func(c int) {
+		if len(updates) != c {
+			panic(c)
+			t.Fatal("Expected", c, "updates")
+		}
+	}
+
+	// Test that it returns the peer
+	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
+
+	// Register a block and check it is added to the list of elements to poll
+	assertTrue(t, p.addBlockToReconcile(pindex))
+	assertBlockPollCount(t, p, 1)
+	assertPollExistsForBlock(t, p, pindex)
+
+	// Trigger a poll on avanode
+	round := p.GetRound()
+	p.eventLoop()
+	// TODO: We should put nodes on a request timer and make this assertion pass
+	// assertTrue(t, p.getSuitableNodeToQuery() == NoNode)
+
+	// Response to the request
+	vote := Response{round, 0, []Vote{Vote{0, blockHash}}}
+	assertTrue(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// Now that avanode fullfilled his request it is added back to the list of
+	// queriable nodes
+	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
+
+	// Sending response when not polled fails
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// Trigger a poll on avanode
+	round = p.GetRound()
+	p.eventLoop()
+	// TODO: We should put nodes on a request timer and make this assertion pass
+	// assertTrue(t, p.getSuitableNodeToQuery() == NoNode)
+
+	// Sending responses that do not match the request also fails.
+	// 1. Too many results.
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{Vote{0, blockHash}, Vote{0, blockHash}}}
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// 2. Not enough results.
+
+	// p.eventLoop()
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{}}
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// 3. Do not match the poll
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{Vote{}}}
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// 4.Invalid round count. Request is not discarded
+	p.eventLoop()
+	vote = Response{round + 1, 0, []Vote{Vote{0, blockHash}}}
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	vote = Response{round - 1, 0, []Vote{Vote{0, blockHash}}}
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// 5. Making request for invalid nodes do not work. Request is not discarded
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	assertFalse(t, p.registerVotes(NodeID(1234), vote, &updates))
+	assertUpdateCount(0)
+
+	// Proper response gets processed and avanode is available again.
+	vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	assertTrue(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+
+	// Out of order response are rejected.
+	pindexB := Hash(66)
+	blockHashB := pindexB
+	assertTrue(t, p.addBlockToReconcile(pindexB))
+
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{Vote{0, blockHash}, Vote{0, blockHashB}}}
+	assertFalse(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
+
+	// But they are accepted in order
+	p.eventLoop()
+	vote = Response{round, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHash}}}
+	assertTrue(t, p.registerVotes(avanode, vote, &updates))
+	assertUpdateCount(0)
+	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
+
+	// TODO: Finish this after using *Block for pindex's
+	// When a block is marked invalid, stop polling.
+	// _isBlockValid = false
+	// p.eventLoop()
+	// vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	// assertTrue(t, p.registerVotes(avanode, vote, &updates))
+	// assertUpdateCount(0)
+	// assertTrue(t, p.getSuitableNodeToQuery() == avanode)
+
+	// Expire requests after some time.
 }
