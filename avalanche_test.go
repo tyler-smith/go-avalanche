@@ -100,9 +100,9 @@ func TestBlockRegister(t *testing.T) {
 		blockHash = Hash(65)
 		pindex    = blockForHash(blockHash)
 
-		noVote      = Response{votes: []Vote{Vote{1, blockHash}}}
-		yesVote     = Response{votes: []Vote{Vote{0, blockHash}}}
-		neutralVote = Response{votes: []Vote{Vote{negativeOne, blockHash}}}
+		noVote      = Response{votes: []Vote{NewVote(1, blockHash)}}
+		yesVote     = Response{votes: []Vote{NewVote(0, blockHash)}}
+		neutralVote = Response{votes: []Vote{NewVote(negativeOne, blockHash)}}
 	)
 	connman.addNode(nodeID)
 
@@ -266,9 +266,9 @@ func TestMultiBlockRegister(t *testing.T) {
 		pindexB    = blockForHash(blockHashB)
 
 		round          = p.GetRound()
-		yesVoteForA    = Response{round, 0, []Vote{Vote{0, blockHashA}}}
-		yesVoteForB    = Response{round + 1, 0, []Vote{Vote{0, blockHashB}}}
-		yesVoteForBoth = Response{round + 1, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
+		yesVoteForA    = Response{round, 0, []Vote{NewVote(0, blockHashA)}}
+		yesVoteForB    = Response{round + 1, 0, []Vote{NewVote(0, blockHashB)}}
+		yesVoteForBoth = Response{round + 1, 0, []Vote{NewVote(0, blockHashB), NewVote(0, blockHashA)}}
 	)
 	connman.addNode(nodeID0)
 	connman.addNode(nodeID1)
@@ -282,7 +282,6 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
-			panic(c)
 			t.Fatal("Expected", c, "updates")
 		}
 	}
@@ -387,7 +386,6 @@ func TestProcessorEventLoop(t *testing.T) {
 
 func assertTrue(t *testing.T, actual bool) {
 	if !actual {
-		panic("")
 		t.Fatal("Expected true; got false")
 	}
 }
@@ -439,7 +437,6 @@ func TestPollAndResponse(t *testing.T) {
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
-			panic(c)
 			t.Fatal("Expected", c, "updates")
 		}
 	}
@@ -459,7 +456,7 @@ func TestPollAndResponse(t *testing.T) {
 	// assertTrue(t, p.getSuitableNodeToQuery() == NoNode)
 
 	// Response to the request
-	vote := Response{round, 0, []Vote{Vote{0, blockHash}}}
+	vote := Response{round, 0, []Vote{NewVote(0, blockHash)}}
 	assertTrue(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
@@ -480,13 +477,11 @@ func TestPollAndResponse(t *testing.T) {
 	// Sending responses that do not match the request also fails.
 	// 1. Too many results.
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{0, blockHash}, Vote{0, blockHash}}}
+	vote = Response{round, 0, []Vote{NewVote(0, blockHash), NewVote(0, blockHash)}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
 	// 2. Not enough results.
-
-	// p.eventLoop()
 	p.eventLoop()
 	vote = Response{round, 0, []Vote{}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
@@ -500,22 +495,22 @@ func TestPollAndResponse(t *testing.T) {
 
 	// 4.Invalid round count. Request is not discarded
 	p.eventLoop()
-	vote = Response{round + 1, 0, []Vote{Vote{0, blockHash}}}
+	vote = Response{round + 1, 0, []Vote{NewVote(0, blockHash)}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
-	vote = Response{round - 1, 0, []Vote{Vote{0, blockHash}}}
+	vote = Response{round - 1, 0, []Vote{NewVote(0, blockHash)}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
 	// 5. Making request for invalid nodes do not work. Request is not discarded
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	vote = Response{round, 0, []Vote{NewVote(0, blockHash)}}
 	assertFalse(t, p.RegisterVotes(NodeID(1234), vote, &updates))
 	assertUpdateCount(0)
 
 	// Proper response gets processed and avanode is available again.
-	vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	vote = Response{round, 0, []Vote{NewVote(0, blockHash)}}
 	assertTrue(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
@@ -525,14 +520,14 @@ func TestPollAndResponse(t *testing.T) {
 	assertTrue(t, p.AddBlockToReconcile(pindexB))
 
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{0, blockHash}, Vote{0, blockHashB}}}
+	vote = Response{round, 0, []Vote{NewVote(0, blockHash), NewVote(0, blockHashB)}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
 
 	// But they are accepted in order
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHash}}}
+	vote = Response{round, 0, []Vote{NewVote(0, blockHashB), NewVote(0, blockHash)}}
 	assertTrue(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
@@ -540,7 +535,7 @@ func TestPollAndResponse(t *testing.T) {
 	// When a block is marked invalid, stop polling.
 	pindexB.valid = false
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{0, blockHash}}}
+	vote = Response{round, 0, []Vote{NewVote(0, blockHash)}}
 	assertTrue(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 	assertTrue(t, p.getSuitableNodeToQuery() == avanode)

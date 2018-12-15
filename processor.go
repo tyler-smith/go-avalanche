@@ -247,24 +247,6 @@ func (p *Processor) eventLoop() {
 	p.queries[queryKey(p.round, nodeID)] = NewRequestRecord(clock.Now().Unix(), invs)
 }
 
-func (p *Processor) handlePoll(poll Poll) *Response {
-	votes := make([]Vote, 0, len(poll.invs))
-	var (
-		vr *VoteRecord
-		ok bool
-	)
-	for _, inv := range poll.invs {
-		vr, ok = p.voteRecords[inv.targetHash]
-		if !ok {
-			panic("VoteRecord not found")
-		}
-
-		votes = append(votes, Vote{err: uint32(vr.votes), hash: inv.targetHash})
-	}
-
-	return &Response{}
-}
-
 // queryKey returns a string to use for map keys that reprents the given inputs
 func queryKey(round int64, nodeID NodeID) string {
 	return fmt.Sprintf("%d|%d", round, nodeID)

@@ -1,23 +1,11 @@
 package avalanche
 
 type node struct {
-	id        NodeID
-	avalanche *Processor
-	quitCh    chan (struct{})
-	doneCh    chan (struct{})
+	id NodeID
 }
 
 func newNode(connman *connman, id NodeID) *node {
-	return &node{
-		id:        id,
-		avalanche: NewProcessor(connman),
-		quitCh:    make(chan (struct{})),
-		doneCh:    make(chan (struct{})),
-	}
-}
-
-func (n *node) handleRequest(poll Poll) *Response {
-	return n.avalanche.handlePoll(poll)
+	return &node{id: id}
 }
 
 type connman struct {
@@ -40,13 +28,4 @@ func (c *connman) nodesIDs() []NodeID {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	return nodeIDs
-}
-
-func (c *connman) sendRequest(id NodeID, poll Poll) *Response {
-	node, ok := c.nodes[id]
-	if !ok {
-		panic("node not found")
-	}
-
-	return node.handleRequest(poll)
 }

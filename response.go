@@ -2,25 +2,24 @@ package avalanche
 
 import "time"
 
-type Poll struct {
-	round int64
-	invs  []Inv
-}
-
+// Response is a list of votes that respond to a Poll
 type Response struct {
 	round    int64
 	cooldown uint32
 	votes    []Vote
 }
 
-func NewResponse() Response {
-	return Response{}
+// NewResponse creates a new Reponse object with the given votes
+func NewResponse(round int64, cooldown uint32, votes []Vote) Response {
+	return Response{round, cooldown, votes}
 }
 
+// GetVotes returns the votes in the Response
 func (r Response) GetVotes() []Vote {
 	return r.votes
 }
 
+// GetRound returns the round of the Response
 func (r Response) GetRound() int64 {
 	return r.round
 }
