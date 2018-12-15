@@ -1,5 +1,7 @@
 package avalanche
 
+import "time"
+
 type Poll struct {
 	round int64
 	invs  []Inv
@@ -38,4 +40,8 @@ func (r RequestRecord) GetTimestamp() int64 {
 
 func (r RequestRecord) GetInvs() []Inv {
 	return r.invs
+}
+
+func (r RequestRecord) IsExpired() bool {
+	return time.Unix(r.timestamp, 0).Add(AvalancheRequestTimeout).Before(clock.Now())
 }

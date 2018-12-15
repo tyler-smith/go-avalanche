@@ -16,6 +16,12 @@ type NodeID int64
 
 const NoNode = NodeID(-1)
 
+type nodesInRequestOrder []NodeID
+
+func (a nodesInRequestOrder) Len() int           { return len(a) }
+func (a nodesInRequestOrder) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a nodesInRequestOrder) Less(i, j int) bool { return a[i] < a[j] }
+
 type Status int
 
 const (
@@ -31,8 +37,8 @@ type StatusUpdate struct {
 }
 
 var staticTestBlockMap = map[Hash]*Block{
-	Hash(65): &Block{Hash(65), 99, true},
-	Hash(66): &Block{Hash(66), 100, true},
+	Hash(65): &Block{Hash(65), 99, true, true},
+	Hash(66): &Block{Hash(66), 100, true, false},
 }
 
 func blockForHash(h Hash) *Block {
@@ -60,16 +66,21 @@ type Target interface {
 	// Type is the kind of thing; e.g. "transaction" or "block"
 	Type() string
 
+	// IsAccepted returns whether or not the target should be considered accepted
+	// when first being considered
+	IsAccepted() bool
+
 	// Score weights to targets against each other; e.g. cumulative work for blocks
 	Score() int64
 
-	Valid() bool
+	IsValid() bool
 }
 
 type Block struct {
-	hash  Hash
-	work  int64
-	valid bool
+	hash            Hash
+	work            int64
+	valid           bool
+	isInActiveChain bool
 }
 
 func (b *Block) Hash() Hash {
@@ -84,7 +95,11 @@ func (b *Block) Score() int64 {
 	return b.work
 }
 
-func (b *Block) Valid() bool {
+func (b *Block) IsAccepted() bool {
+	return b.isInActiveChain
+}
+
+func (b *Block) IsValid() bool {
 	return b.valid
 }
 

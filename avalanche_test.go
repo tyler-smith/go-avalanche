@@ -1,7 +1,6 @@
 package avalanche
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -266,18 +265,20 @@ func TestMultiBlockRegister(t *testing.T) {
 		blockHashB = Hash(66)
 		pindexB    = blockForHash(blockHashB)
 
-		round = p.GetRound()
-		// blockHash = Hash(65)
-		// pindex    = blockHash
-
-		// noVote      = Response{0, votes: []Vote{Vote{1, blockHash}}}
-		yesVoteForA = Response{0, 0, []Vote{Vote{0, blockHashA}}}
-		yesVoteForB = Response{round, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
-		// neutralVote = Response{0, votes: []Vote{Vote{negativeOne, blockHash}}}
-
+		round          = p.GetRound()
+		yesVoteForA    = Response{round, 0, []Vote{Vote{0, blockHashA}}}
+		yesVoteForB    = Response{round + 1, 0, []Vote{Vote{0, blockHashB}}}
+		yesVoteForBoth = Response{round + 1, 0, []Vote{Vote{0, blockHashB}, Vote{0, blockHashA}}}
 	)
 	connman.addNode(nodeID0)
 	connman.addNode(nodeID1)
+
+	// TODO: Implement polling both nodes like in the ABC tests. Currently it
+	// always uses node0. Need to fix the getSuitableNode logic in Processor
+
+	// TODO: The ABC tests don't change these afaict
+	// Figure out why this needs to be true
+	pindexB.isInActiveChain = true
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
@@ -294,13 +295,12 @@ func TestMultiBlockRegister(t *testing.T) {
 	assertTrue(t, p.AddBlockToReconcile(pindexA))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindexA)
-
-	// Vote on block A
 	p.eventLoop()
 	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForA, &updates))
 	assertUpdateCount(0)
 
 	// Start voting on block B after one vote
+	p.round += 1
 	assertTrue(t, p.AddBlockToReconcile(pindexB))
 	assertBlockPollCount(t, p, 2)
 
@@ -313,104 +313,33 @@ func TestMultiBlockRegister(t *testing.T) {
 		t.Fatal("Inv for block B should be first because it has more work")
 	}
 
-	// TODO: Get rest of these tests working
-	return
-
 	// Let's vote for these blocks a few times
-	// TODO: Figure out why this is i < 4 in abc
 	for i := 0; i < 4; i++ {
-		// for i := 0; i < 4; i++ {
-		// fmt.Println(p.getInvsForNextPoll())
 		p.eventLoop()
-		fmt.Println("responding from", nodeID0)
-		assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForB, &updates))
+		assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForBoth, &updates))
 		assertUpdateCount(0)
 	}
-
-	// // Now it is accepted, but we can vote for it numerous times.
-	// for i := 0; i < AvalancheFinalizationScore; i++ {
-	// 	// NodeId nodeid = AvalancheTest::getSuitableNodeToQuery(p);
-	// 	p.eventLoop()
-	// 	assertTrue(t, p.registerVotes(nodeID0, yesVoteForB, &updates))
-	// 	assertUpdateCount(0)
-	// }
-
-	// Now the state will flip for A
-	p.eventLoop()
-	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForB, &updates))
-	assertUpdateCount(1)
-	if updates[0].Hash != blockHashA {
-		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
-	}
-	if updates[0].Status != StatusAccepted {
-		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
-	}
-	updates = []StatusUpdate{}
 
 	// Now it is accepted, but we can vote for it numerous times.
 	for i := 0; i < AvalancheFinalizationScore; i++ {
-		// NodeId nodeid = AvalancheTest::getSuitableNodeToQuery(p);
 		p.eventLoop()
-		assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForB, &updates))
-		fmt.Println("i:", i, "updates:", updates)
+		assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForBoth, &updates))
 		assertUpdateCount(0)
 	}
-	return
 
-	// Now the state will flip for A
-	// return
-	// // Now it is accepted, but we can vote for it numerous times
-	// for i := 0; i < AvalancheFinalizationScore; i++ {
-	// 	p.eventLoop()
-	// 	nodeID := p.getSuitableNodeToQuery()
-	// 	assertTrue(t, p.registerVotes(nodeID, yesVoteForB, &updates))
-	// 	assertUpdateCount(0)
-	// }
-
-	// Running two iteration of the event loop so that vote gets triggerd on A and B
-
-	// // Now the state will flip for A
-	// p.eventLoop()
-	// nodeID = p.getSuitableNodeToQuery()
-	// assertTrue(t, p.registerVotes(nodeID, yesVoteForA, &updates))
-	// assertUpdateCount(1)
-	// if updates[0].Hash != blockHashA {
-	// 	t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
-	// }
-	// if updates[0].Status != StatusAccepted {
-	// 	t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
-	// }
-	// updates = []StatusUpdate{}
-
-	// And then for B
-	p.eventLoop()
-	// nodeID = p.getSuitableNodeToQuery()
-	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForA, &updates))
-	assertUpdateCount(1)
-	if updates[0].Hash != blockHashB {
-		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashB)
-	}
-	if updates[0].Status != StatusAccepted {
-		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
-	}
-	updates = []StatusUpdate{}
-
-	// Now it is rejected but we can vote for it numerous times
-	for i := 2; i < AvalancheFinalizationScore; i++ {
-		p.eventLoop()
-		assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForA, &updates))
-		assertUpdateCount(0)
-	}
+	// TODO:
+	// Running two iterration of the event loop so that vote gets triggerd on A
+	// and B
 
 	// Next vote will finalize block A
 	p.eventLoop()
-	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForA, &updates))
+	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForBoth, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHashA {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashA)
 	}
 	if updates[0].Status != StatusFinalized {
-		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusFinalized)
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
 	}
 	updates = []StatusUpdate{}
 
@@ -420,19 +349,20 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	// Next vote will finalize block B
 	p.eventLoop()
-	// resp = Response{0, 0, []Vote{Vote{0, blockHashB}}}
-	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForA, &updates))
+	assertTrue(t, p.RegisterVotes(nodeID0, yesVoteForB, &updates))
 	assertUpdateCount(1)
 	if updates[0].Hash != blockHashB {
 		t.Fatal("Update has incorrect hash. Got", updates[0].Hash, "but wanted:", blockHashB)
 	}
 	if updates[0].Status != StatusFinalized {
-		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusFinalized)
+		t.Fatal("Update has incorrect status. Got", updates[0].Status, "but wanted:", StatusAccepted)
 	}
 	updates = []StatusUpdate{}
 
-	// There is nothing left to vote on
+	// There is nothing left to vote on.
 	assertBlockPollCount(t, p, 0)
+
+	return
 }
 
 func TestProcessorEventLoop(t *testing.T) {

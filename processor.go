@@ -2,10 +2,13 @@ package avalanche
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
 
+// Processor drives the Avalanche process by sending queries and handling
+// responses.
 type Processor struct {
 	voteRecords map[Hash]*VoteRecord
 	round       int64
@@ -20,6 +23,7 @@ type Processor struct {
 	doneCh    chan (struct{})
 }
 
+// NewProcessor creates a new *Processor
 func NewProcessor(connman *connman) *Processor {
 	return &Processor{
 		voteRecords: map[Hash]*VoteRecord{},
@@ -30,10 +34,12 @@ func NewProcessor(connman *connman) *Processor {
 	}
 }
 
+// GetRound returns the current round for the *Processor
 func (p *Processor) GetRound() int64 {
 	return p.round
 }
 
+// AddBlockToReconcile begins the voting process for a given target
 func (p *Processor) AddBlockToReconcile(t Target) bool {
 	if !p.isWorthyPolling(t) {
 		return false
@@ -44,22 +50,25 @@ func (p *Processor) AddBlockToReconcile(t Target) bool {
 		return false
 	}
 
-	p.voteRecords[t.Hash()] = NewVoteRecord(true)
+	p.voteRecords[t.Hash()] = NewVoteRecord(t.IsAccepted())
 	return true
 }
 
+// RegisterVotes processes responses to queries
 func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpdate) bool {
 	key := queryKey(resp.GetRound(), id)
+
 	r, ok := p.queries[key]
 	if !ok {
 		return false
 	}
 
-	if time.Unix(r.timestamp, 0).Add(AvalancheRequestTimeout).Before(clock.Now()) {
-		delete(p.queries, key)
+	// Always delete the key if it's present
+	delete(p.queries, key)
+
+	if r.IsExpired() {
 		return false
 	}
-	delete(p.queries, key)
 
 	invs := r.GetInvs()
 	votes := resp.GetVotes()
@@ -78,6 +87,10 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 		vr, ok := p.voteRecords[v.GetHash()]
 		if !ok {
 			// We are not voting on this anymore
+			continue
+		}
+
+		if !p.isWorthyPolling(blockForHash(v.GetHash())) {
 			continue
 		}
 
@@ -114,6 +127,7 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 	return true
 }
 
+// IsAccepted returns whether or not the Traget has been accepted by consensus
 func (p *Processor) IsAccepted(t Target) bool {
 	if vr, ok := p.voteRecords[t.Hash()]; ok {
 		return vr.isAccepted()
@@ -121,6 +135,7 @@ func (p *Processor) IsAccepted(t Target) bool {
 	return false
 }
 
+// GetConfidence returns the confidence we have in the Target's acceptance
 func (p *Processor) GetConfidence(t Target) uint16 {
 	vr, ok := p.voteRecords[t.Hash()]
 	if !ok {
@@ -130,6 +145,8 @@ func (p *Processor) GetConfidence(t Target) uint16 {
 	return vr.getConfidence()
 }
 
+// getInvsForNextPoll returns Invs for outstanding items that need to be
+// resolved by further queries
 func (p *Processor) getInvsForNextPoll() []Inv {
 	invs := make([]Inv, 0, len(p.voteRecords))
 
@@ -157,8 +174,11 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 	return invs
 }
 
+// getSuitableNodeToQuery returns the best node to send the next query to
 func (p *Processor) getSuitableNodeToQuery() NodeID {
 	nodeIDs := p.connman.nodesIDs()
+
+	sort.Sort(nodesInRequestOrder(nodeIDs))
 
 	if len(nodeIDs) == 0 {
 		return NoNode
@@ -166,10 +186,12 @@ func (p *Processor) getSuitableNodeToQuery() NodeID {
 	return nodeIDs[0]
 }
 
+// isWorthyPolling determines whether or it's even worth polling about a Target
 func (p *Processor) isWorthyPolling(t Target) bool {
-	return t.Valid()
+	return t.IsValid()
 }
 
+// start begins the poll/response cycle
 func (p *Processor) start() bool {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()
@@ -198,6 +220,7 @@ func (p *Processor) start() bool {
 	return true
 }
 
+// stop ends the poll/response cycle
 func (p *Processor) stop() bool {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()
@@ -213,6 +236,7 @@ func (p *Processor) stop() bool {
 	return true
 }
 
+// eventLoop performs a tick of processing
 func (p *Processor) eventLoop() {
 	invs := p.getInvsForNextPoll()
 	if len(invs) == 0 {
@@ -241,6 +265,7 @@ func (p *Processor) handlePoll(poll Poll) *Response {
 	return &Response{}
 }
 
+// queryKey returns a string to use for map keys that reprents the given inputs
 func queryKey(round int64, nodeID NodeID) string {
 	return fmt.Sprintf("%d|%d", round, nodeID)
 }
