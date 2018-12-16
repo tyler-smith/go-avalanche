@@ -487,7 +487,7 @@ func TestPollAndResponse(t *testing.T) {
 
 	// 3. Do not match the poll
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{}}}
+	vote = Response{round, 0, []Vote{{}}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 

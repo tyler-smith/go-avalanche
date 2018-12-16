@@ -24,7 +24,7 @@ func (c *connman) addNode(id NodeID) {
 
 func (c *connman) nodesIDs() []NodeID {
 	nodeIDs := make([]NodeID, 0, len(c.nodes))
-	for nodeID, _ := range c.nodes {
+	for nodeID := range c.nodes {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	return nodeIDs

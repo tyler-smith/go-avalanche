@@ -83,8 +83,8 @@ func (c stubClocker) Now() time.Time { return c.t }
 // Block stubs
 //
 var staticTestBlockMap = map[Hash]*Block{
-	Hash(65): &Block{Hash(65), 99, true, true},
-	Hash(66): &Block{Hash(66), 100, true, false},
+	Hash(65): {Hash(65), 99, true, true},
+	Hash(66): {Hash(66), 100, true, false},
 }
 
 func blockForHash(h Hash) *Block {
