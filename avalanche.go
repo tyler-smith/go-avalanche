@@ -6,37 +6,62 @@ import (
 )
 
 const (
+	// AvalancheFinalizationScore is the confidence score we consider to be final
 	AvalancheFinalizationScore = 128
-	AvalancheTimeStep          = 10 * time.Millisecond
-	AvalancheMaxElementPoll    = 4096
-	AvalancheRequestTimeout    = 1 * time.Minute
+
+	// AvalancheTimeStep is the amount of time to wait between event ticks
+	AvalancheTimeStep = 10 * time.Millisecond
+
+	// AvalancheMaxElementPoll is the maximum number of invs to send in a single
+	// query
+	AvalancheMaxElementPoll = 4096
+
+	// AvalancheRequestTimeout is the amount of time to wait for a response to a
+	// query
+	AvalancheRequestTimeout = 1 * time.Minute
 )
 
 // NodeID is the identifier for an avalanche node
 type NodeID int64
 
+// NoNode represents no suitable nodes available
 const NoNode = NodeID(-1)
 
 type nodesInRequestOrder []NodeID
 
-func (a nodesInRequestOrder) Len() int           { return len(a) }
-func (a nodesInRequestOrder) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+// Len implements the sort interface Len method for nodesInRequestOrder
+func (a nodesInRequestOrder) Len() int { return len(a) }
+
+// Swap implements the sort interface Swap method for nodesInRequestOrder
+func (a nodesInRequestOrder) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+// Less implements the sort interface Less method for nodesInRequestOrder
 func (a nodesInRequestOrder) Less(i, j int) bool { return a[i] < a[j] }
 
+// Status is the status of consensus on a particular target
 type Status int
 
 const (
+	// StatusInvalid means the target is invalid
 	StatusInvalid Status = iota
+
+	// StatusRejected means the target is been deemed to be rejected
 	StatusRejected
+
+	// StatusRejected means the target is been deemed to be accepted
 	StatusAccepted
+
+	// StatusRejected means the consensus on the target is been finalized
 	StatusFinalized
 )
 
+// StatusUpdate represents a change in status for a particular Target
 type StatusUpdate struct {
 	Hash
 	Status
 }
 
+// Inv is a poll request for a Target
 type Inv struct {
 	targetType string
 	targetHash Hash
@@ -47,6 +72,7 @@ type Hash int
 
 // Target is is something being decided by consensus; e.g. a transaction or block
 type Target interface {
+	// Hash returns the digest used as an ID for the Target
 	Hash() Hash
 
 	// Type is the kind of thing; e.g. "transaction" or "block"
@@ -73,10 +99,12 @@ type clocker interface{ Now() time.Time }
 
 type realClocker struct{}
 
+// Now returns the current time
 func (realClocker) Now() time.Time { return time.Now() }
 
 type stubClocker struct{ t time.Time }
 
+// Now returns the stub's preset time
 func (c stubClocker) Now() time.Time { return c.t }
 
 //
@@ -98,6 +126,7 @@ func blockForHash(h Hash) *Block {
 	return b
 }
 
+// Block is a stub for Bitcoin block
 type Block struct {
 	hash            Hash
 	work            int64
@@ -105,22 +134,27 @@ type Block struct {
 	isInActiveChain bool
 }
 
+// Hash returns the Blocks id
 func (b *Block) Hash() Hash {
 	return b.hash
 }
 
+// Type returns the Target type; in this case a block
 func (b *Block) Type() string {
 	return "block"
 }
 
+// Score returns the weight of the block against others; in the this the work
 func (b *Block) Score() int64 {
 	return b.work
 }
 
+// IsAccepted returns whether or not the Block has been accepted
 func (b *Block) IsAccepted() bool {
 	return b.isInActiveChain
 }
 
+// IsValid returns whether or not the Block is valid
 func (b *Block) IsValid() bool {
 	return b.valid
 }
@@ -141,6 +175,11 @@ func sortBlockInvsByWork(invs []Inv) {
 
 type blocksByWork []*Block
 
-func (a blocksByWork) Len() int           { return len(a) }
-func (a blocksByWork) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+// Len implements the sort interface's Len method for blocksByWork
+func (a blocksByWork) Len() int { return len(a) }
+
+// Swap implements the sort interface's Swap method for blocksByWork
+func (a blocksByWork) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+// Less implements the sort interface's Less method for blocksByWork
 func (a blocksByWork) Less(i, j int) bool { return a[i].work > a[j].work }
