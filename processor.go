@@ -103,24 +103,10 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 		}
 
 		// Add appropriate status
-		var status Status
-		finalized := vr.hasFinalized()
-		accepted := vr.isAccepted()
-		switch {
-		case !finalized && accepted:
-			status = StatusAccepted
-		case !finalized && !accepted:
-			status = StatusRejected
-		case finalized && accepted:
-			status = StatusFinalized
-		case finalized && !accepted:
-			status = StatusInvalid
-		}
-
-		*updates = append(*updates, StatusUpdate{v.GetHash(), status})
+		*updates = append(*updates, StatusUpdate{v.GetHash(), vr.status()})
 
 		// When we finalize we want to remove our vote record
-		if finalized {
+		if vr.hasFinalized() {
 			delete(p.voteRecords, v.GetHash())
 		}
 	}

@@ -77,6 +77,22 @@ func (vr *VoteRecord) regsiterVote(err uint32) bool {
 	return true
 }
 
+func (vr *VoteRecord) status() (status Status) {
+	finalized := vr.hasFinalized()
+	accepted := vr.isAccepted()
+	switch {
+	case !finalized && accepted:
+		status = StatusAccepted
+	case !finalized && !accepted:
+		status = StatusRejected
+	case finalized && accepted:
+		status = StatusFinalized
+	case finalized && !accepted:
+		status = StatusInvalid
+	}
+	return status
+}
+
 func countBits8(i uint8) (count int) {
 	for ; i > 0; i &= (i - 1) {
 		count++
