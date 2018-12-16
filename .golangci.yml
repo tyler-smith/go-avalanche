@@ -9,9 +9,6 @@ issues:
     - composite literal uses unkeyed fields
 
 linters-settings:
-  # errcheck:
-  #   check-type-assertions: false
-  #   check-blank: false
   unparam:
     algo: cha
     check-exported: false
@@ -19,14 +16,12 @@ linters-settings:
     max-func-lines: 0
   misspell:
     locale: US
-  dupl:
-    threshold: 5
   goconst:
     min-occurrences: 3
   gocyclo:
     min-complexity: 20
   lll:
-    line-length: 80
+    line-length: 120
 
 linters:
   enable:
@@ -49,6 +44,5 @@ linters:
     - errcheck
     - golint
     - prealloc
-  disable:
     - lll
-    - dupl
+  disable:
