@@ -48,10 +48,10 @@ const (
 	// StatusRejected means the target is been deemed to be rejected
 	StatusRejected
 
-	// StatusRejected means the target is been deemed to be accepted
+	// StatusAccepted means the target is been deemed to be accepted
 	StatusAccepted
 
-	// StatusRejected means the consensus on the target is been finalized
+	// StatusFinalized means the consensus on the target is been finalized
 	StatusFinalized
 )
 
