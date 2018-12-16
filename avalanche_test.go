@@ -1,7 +1,6 @@
 package avalanche
 
 import (
-	"sort"
 	"testing"
 	"time"
 )
@@ -300,7 +299,7 @@ func TestMultiBlockRegister(t *testing.T) {
 	assertUpdateCount(0)
 
 	// Start voting on block B after one vote
-	p.round += 1
+	p.round++
 	assertTrue(t, p.AddTargetToReconcile(pindexB))
 	assertBlockPollCount(t, p, 2)
 
@@ -361,8 +360,6 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	// There is nothing left to vote on.
 	assertBlockPollCount(t, p, 0)
-
-	return
 }
 
 func TestProcessorEventLoop(t *testing.T) {
@@ -490,7 +487,7 @@ func TestPollAndResponse(t *testing.T) {
 
 	// 3. Do not match the poll
 	p.eventLoop()
-	vote = Response{round, 0, []Vote{Vote{}}}
+	vote = Response{round, 0, []Vote{{}}}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
@@ -547,69 +544,3 @@ func TestPollAndResponse(t *testing.T) {
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 }
-
-//
-// Stub blocks to test with
-//
-var staticTestBlockMap = map[Hash]*Block{
-	Hash(65): &Block{Hash(65), 99, true, true},
-	Hash(66): &Block{Hash(66), 100, true, false},
-}
-
-func blockForHash(h Hash) *Block {
-	b, ok := staticTestBlockMap[h]
-
-	// TODO: replace with proper error handling
-	if !ok {
-		panic("Block not found with hash")
-	}
-
-	return b
-}
-
-type Block struct {
-	hash            Hash
-	work            int64
-	valid           bool
-	isInActiveChain bool
-}
-
-func (b *Block) Hash() Hash {
-	return b.hash
-}
-
-func (b *Block) Type() string {
-	return "block"
-}
-
-func (b *Block) Score() int64 {
-	return b.work
-}
-
-func (b *Block) IsAccepted() bool {
-	return b.isInActiveChain
-}
-
-func (b *Block) IsValid() bool {
-	return b.valid
-}
-
-func sortBlockInvsByWork(invs []Inv) {
-	blocks := make(blocksByWork, len(invs))
-	for i, inv := range invs {
-		// TODO: Return error if a targetType is not "block"
-		blocks[i] = blockForHash(inv.targetHash)
-	}
-
-	sort.Sort(blocks)
-
-	for i, b := range blocks {
-		invs[i] = Inv{"block", b.Hash()}
-	}
-}
-
-type blocksByWork []*Block
-
-func (a blocksByWork) Len() int           { return len(a) }
-func (a blocksByWork) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a blocksByWork) Less(i, j int) bool { return a[i].work > a[j].work }

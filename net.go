@@ -4,7 +4,7 @@ type node struct {
 	id NodeID
 }
 
-func newNode(connman *connman, id NodeID) *node {
+func newNode(id NodeID) *node {
 	return &node{id: id}
 }
 
@@ -19,12 +19,12 @@ func newConnman() *connman {
 }
 
 func (c *connman) addNode(id NodeID) {
-	c.nodes[id] = newNode(c, id)
+	c.nodes[id] = newNode(id)
 }
 
 func (c *connman) nodesIDs() []NodeID {
 	nodeIDs := make([]NodeID, 0, len(c.nodes))
-	for nodeID, _ := range c.nodes {
+	for nodeID := range c.nodes {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	return nodeIDs
