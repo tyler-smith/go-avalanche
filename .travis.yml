@@ -1,0 +1,11 @@
+language: go
+go:
+  - "1.10"
+env:
+  - "PATH=/home/travis/gopath/bin:$PATH"
+before_install:
+  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | bash -s -- -b $GOPATH/bin v1.10
+
+script:
+  - $GOPATH/bin/golangci-lint run
+  - go test -v -cover ./...
