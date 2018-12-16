@@ -25,6 +25,7 @@ linters-settings:
 
 linters:
   enable:
+    - misspell
     - unconvert
     - gofmt
     - ineffassign

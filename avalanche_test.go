@@ -458,7 +458,7 @@ func TestPollAndResponse(t *testing.T) {
 	assertTrue(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 
-	// Now that avanode fullfilled his request it is added back to the list of
+	// Now that avanode fulfilled his request it is added back to the list of
 	// queriable nodes
 	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
 
