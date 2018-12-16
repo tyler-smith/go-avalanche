@@ -299,7 +299,7 @@ func TestMultiBlockRegister(t *testing.T) {
 	assertUpdateCount(0)
 
 	// Start voting on block B after one vote
-	p.round += 1
+	p.round++
 	assertTrue(t, p.AddTargetToReconcile(pindexB))
 	assertBlockPollCount(t, p, 2)
 
