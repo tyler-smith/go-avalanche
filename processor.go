@@ -14,6 +14,7 @@ type Processor struct {
 	round       int64
 	queries     map[string]RequestRecord
 	nodeIDs     map[NodeID]struct{}
+	targetMap   map[Hash]Target
 
 	connman *connman
 
@@ -39,8 +40,8 @@ func (p *Processor) GetRound() int64 {
 	return p.round
 }
 
-// AddBlockToReconcile begins the voting process for a given target
-func (p *Processor) AddBlockToReconcile(t Target) bool {
+// AddTargetToReconcile begins the voting process for a given target
+func (p *Processor) AddTargetToReconcile(t Target) bool {
 	if !p.isWorthyPolling(t) {
 		return false
 	}
@@ -50,6 +51,7 @@ func (p *Processor) AddBlockToReconcile(t Target) bool {
 		return false
 	}
 
+	p.targetMap[t.Hash()] = t
 	p.voteRecords[t.Hash()] = NewVoteRecord(t.IsAccepted())
 	return true
 }
@@ -90,7 +92,7 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 			continue
 		}
 
-		if !p.isWorthyPolling(blockForHash(v.GetHash())) {
+		if !p.isWorthyPolling(p.targetMap[v.GetHash()]) {
 			continue
 		}
 
@@ -156,13 +158,15 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 			continue
 		}
 
+		t := p.targetMap[idx]
+
 		// Obviously do not poll if the target is not worth polling
-		if !p.isWorthyPolling(blockForHash(idx)) {
+		if !p.isWorthyPolling(t) {
 			continue
 		}
 
 		// We don't have a decision, we need more votes.
-		invs = append(invs, Inv{"block", idx})
+		invs = append(invs, Inv{t.Type(), idx})
 	}
 
 	sortBlockInvsByWork(invs)

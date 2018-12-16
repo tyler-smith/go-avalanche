@@ -1,6 +1,7 @@
 package avalanche
 
 import (
+	"sort"
 	"testing"
 	"time"
 )
@@ -116,7 +117,7 @@ func TestBlockRegister(t *testing.T) {
 	assertFalse(t, p.IsAccepted(pindex))
 
 	// Add a new block. Check that it's added to the polls
-	assertTrue(t, p.AddBlockToReconcile(pindex))
+	assertTrue(t, p.AddTargetToReconcile(pindex))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindex)
 
@@ -193,7 +194,7 @@ func TestBlockRegister(t *testing.T) {
 	assertBlockPollCount(t, p, 0)
 
 	// Now let's undo this and finalize rejection.
-	assertTrue(t, p.AddBlockToReconcile(pindex))
+	assertTrue(t, p.AddTargetToReconcile(pindex))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindex)
 
@@ -246,8 +247,8 @@ func TestBlockRegister(t *testing.T) {
 	assertBlockPollCount(t, p, 0)
 
 	// Adding the block twice does nothing.
-	assertTrue(t, p.AddBlockToReconcile(pindex))
-	assertFalse(t, p.AddBlockToReconcile(pindex))
+	assertTrue(t, p.AddTargetToReconcile(pindex))
+	assertFalse(t, p.AddTargetToReconcile(pindex))
 	assertTrue(t, p.IsAccepted(pindex))
 }
 
@@ -291,7 +292,7 @@ func TestMultiBlockRegister(t *testing.T) {
 	assertFalse(t, p.IsAccepted(pindexB))
 
 	// Start voting on block A.
-	assertTrue(t, p.AddBlockToReconcile(pindexA))
+	assertTrue(t, p.AddTargetToReconcile(pindexA))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindexA)
 	p.eventLoop()
@@ -300,7 +301,7 @@ func TestMultiBlockRegister(t *testing.T) {
 
 	// Start voting on block B after one vote
 	p.round += 1
-	assertTrue(t, p.AddBlockToReconcile(pindexB))
+	assertTrue(t, p.AddTargetToReconcile(pindexB))
 	assertBlockPollCount(t, p, 2)
 
 	// B should be first because it has more accumulated work
@@ -445,7 +446,7 @@ func TestPollAndResponse(t *testing.T) {
 	assertTrue(t, p.getSuitableNodeToQuery() == avanode)
 
 	// Register a block and check it is added to the list of elements to poll
-	assertTrue(t, p.AddBlockToReconcile(pindex))
+	assertTrue(t, p.AddTargetToReconcile(pindex))
 	assertBlockPollCount(t, p, 1)
 	assertPollExistsForBlock(t, p, pindex)
 
@@ -517,7 +518,7 @@ func TestPollAndResponse(t *testing.T) {
 	// Out of order response are rejected.
 	blockHashB := Hash(66)
 	pindexB := blockForHash(blockHashB)
-	assertTrue(t, p.AddBlockToReconcile(pindexB))
+	assertTrue(t, p.AddTargetToReconcile(pindexB))
 
 	p.eventLoop()
 	vote = Response{round, 0, []Vote{NewVote(0, blockHash), NewVote(0, blockHashB)}}
@@ -546,3 +547,69 @@ func TestPollAndResponse(t *testing.T) {
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 }
+
+//
+// Stub blocks to test with
+//
+var staticTestBlockMap = map[Hash]*Block{
+	Hash(65): &Block{Hash(65), 99, true, true},
+	Hash(66): &Block{Hash(66), 100, true, false},
+}
+
+func blockForHash(h Hash) *Block {
+	b, ok := staticTestBlockMap[h]
+
+	// TODO: replace with proper error handling
+	if !ok {
+		panic("Block not found with hash")
+	}
+
+	return b
+}
+
+type Block struct {
+	hash            Hash
+	work            int64
+	valid           bool
+	isInActiveChain bool
+}
+
+func (b *Block) Hash() Hash {
+	return b.hash
+}
+
+func (b *Block) Type() string {
+	return "block"
+}
+
+func (b *Block) Score() int64 {
+	return b.work
+}
+
+func (b *Block) IsAccepted() bool {
+	return b.isInActiveChain
+}
+
+func (b *Block) IsValid() bool {
+	return b.valid
+}
+
+func sortBlockInvsByWork(invs []Inv) {
+	blocks := make(blocksByWork, len(invs))
+	for i, inv := range invs {
+		// TODO: Return error if a targetType is not "block"
+		blocks[i] = blockForHash(inv.targetHash)
+	}
+
+	sort.Sort(blocks)
+
+	for i, b := range blocks {
+		invs[i] = Inv{"block", b.Hash()}
+	}
+}
+
+type blocksByWork []*Block
+
+func (a blocksByWork) Len() int           { return len(a) }
+func (a blocksByWork) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a blocksByWork) Less(i, j int) bool { return a[i].work > a[j].work }
