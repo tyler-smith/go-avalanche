@@ -10,13 +10,13 @@ import (
 // Processor drives the Avalanche process by sending queries and handling
 // responses.
 type Processor struct {
-	voteRecords map[Hash]*VoteRecord
-	round       int64
-	queries     map[string]RequestRecord
-	nodeIDs     map[NodeID]struct{}
-	targetMap   map[Hash]Target
-
 	connman *connman
+
+	round       int64
+	targets     map[Hash]Target
+	voteRecords map[Hash]*VoteRecord
+	nodeIDs     map[NodeID]struct{}
+	queries     map[string]RequestRecord
 
 	runMu     sync.Mutex
 	isRunning bool
@@ -28,6 +28,7 @@ type Processor struct {
 func NewProcessor(connman *connman) *Processor {
 	return &Processor{
 		voteRecords: map[Hash]*VoteRecord{},
+		targets:     map[Hash]Target{},
 		queries:     map[string]RequestRecord{},
 		nodeIDs:     map[NodeID]struct{}{},
 
@@ -51,7 +52,7 @@ func (p *Processor) AddTargetToReconcile(t Target) bool {
 		return false
 	}
 
-	p.targetMap[t.Hash()] = t
+	p.targets[t.Hash()] = t
 	p.voteRecords[t.Hash()] = NewVoteRecord(t.IsAccepted())
 	return true
 }
@@ -92,7 +93,7 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 			continue
 		}
 
-		if !p.isWorthyPolling(p.targetMap[v.GetHash()]) {
+		if !p.isWorthyPolling(p.targets[v.GetHash()]) {
 			continue
 		}
 
@@ -158,7 +159,7 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 			continue
 		}
 
-		t := p.targetMap[idx]
+		t := p.targets[idx]
 
 		// Obviously do not poll if the target is not worth polling
 		if !p.isWorthyPolling(t) {

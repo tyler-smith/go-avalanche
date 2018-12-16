@@ -74,6 +74,6 @@ type realClocker struct{}
 
 func (realClocker) Now() time.Time { return time.Now() }
 
-type subClocker struct{ t time.Time }
+type stubClocker struct{ t time.Time }
 
-func (c subClocker) Now() time.Time { return c.t }
+func (c stubClocker) Now() time.Time { return c.t }

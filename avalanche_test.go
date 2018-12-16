@@ -543,7 +543,7 @@ func TestPollAndResponse(t *testing.T) {
 
 	// Expire requests after some time.
 	p.eventLoop()
-	clock = stubTimeGetter{time.Now().Add(1 * time.Minute)}
+	clock = stubClocker{time.Now().Add(1 * time.Minute)}
 	assertFalse(t, p.RegisterVotes(avanode, vote, &updates))
 	assertUpdateCount(0)
 }
