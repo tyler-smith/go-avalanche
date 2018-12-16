@@ -9,7 +9,7 @@ type Response struct {
 	votes    []Vote
 }
 
-// NewResponse creates a new Reponse object with the given votes
+// NewResponse creates a new Response object with the given votes
 func NewResponse(round int64, cooldown uint32, votes []Vote) Response {
 	return Response{round, cooldown, votes}
 }
