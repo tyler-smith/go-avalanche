@@ -1,6 +1,6 @@
 # go-avalanche
 
-*go-avalanche is a work in progress and not ready for use*
+**go-avalanche is a work in progress and not ready for use**
 
 An implementation of the Avalanche consensus algorithm. It was originally transcribed from [Bitcoin ABC's](https://www.bitcoinabc.org/) C++ implementation.
 
