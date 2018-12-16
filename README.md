@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.org/tyler-smith/go-avalanche.svg?branch=master)](https://travis-ci.org/tyler-smith/go-avalanche)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tyler-smith/go-avalanche)](https://goreportcard.com/report/github.com/tyler-smith/go-avalanche)
+[![Documentation](https://godoc.org/github.com/tyler-smith/go-avalanche?status.svg)](http://godoc.org/github.com/tyler-smith/go-avalanche)
 
 ***go-avalanche is a work in progress and not ready for use***
 
