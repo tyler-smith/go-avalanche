@@ -92,7 +92,7 @@ func TestVoteRecord(t *testing.T) {
 }
 func TestBlockRegister(t *testing.T) {
 	var (
-		connman = newConnman()
+		connman = NewConnman()
 		p       = NewProcessor(connman)
 		nodeID  = NodeID(0)
 
@@ -104,7 +104,7 @@ func TestBlockRegister(t *testing.T) {
 		yesVote     = Response{votes: []Vote{NewVote(0, blockHash)}}
 		neutralVote = Response{votes: []Vote{NewVote(negativeOne, blockHash)}}
 	)
-	connman.addNode(nodeID)
+	connman.AddNode(nodeID)
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
@@ -253,7 +253,7 @@ func TestBlockRegister(t *testing.T) {
 
 func TestMultiBlockRegister(t *testing.T) {
 	var (
-		connman = newConnman()
+		connman = NewConnman()
 		p       = NewProcessor(connman)
 		nodeID0 = NodeID(0)
 		nodeID1 = NodeID(1)
@@ -270,8 +270,8 @@ func TestMultiBlockRegister(t *testing.T) {
 		yesVoteForB    = Response{round + 1, 0, []Vote{NewVote(0, blockHashB)}}
 		yesVoteForBoth = Response{round + 1, 0, []Vote{NewVote(0, blockHashB), NewVote(0, blockHashA)}}
 	)
-	connman.addNode(nodeID0)
-	connman.addNode(nodeID1)
+	connman.AddNode(nodeID0)
+	connman.AddNode(nodeID1)
 
 	// TODO: Implement polling both nodes like in the ABC tests. Currently it
 	// always uses node0. Need to fix the getSuitableNode logic in Processor
@@ -304,11 +304,11 @@ func TestMultiBlockRegister(t *testing.T) {
 	assertBlockPollCount(t, p, 2)
 
 	// B should be first because it has more accumulated work
-	invs := p.getInvsForNextPoll()
-	if invs[0].targetHash != blockHashB {
+	invs := p.GetInvsForNextPoll()
+	if invs[0].TargetHash != blockHashB {
 		t.Fatal("Inv for block B should be first because it has more work")
 	}
-	if invs[1].targetHash != blockHashA {
+	if invs[1].TargetHash != blockHashA {
 		t.Fatal("Inv for block B should be first because it has more work")
 	}
 
@@ -363,7 +363,7 @@ func TestMultiBlockRegister(t *testing.T) {
 }
 
 func TestProcessorEventLoop(t *testing.T) {
-	p := NewProcessor(newConnman())
+	p := NewProcessor(NewConnman())
 
 	// Start loop
 	assertTrue(t, p.start())
@@ -395,7 +395,7 @@ func assertFalse(t *testing.T, actual bool) {
 }
 
 func assertBlockPollCount(t *testing.T, p *Processor, count int) {
-	invs := p.getInvsForNextPoll()
+	invs := p.GetInvsForNextPoll()
 	if len(invs) != count {
 		t.Fatal("Should have exactly", count, "invs but have", len(invs))
 	}
@@ -403,8 +403,8 @@ func assertBlockPollCount(t *testing.T, p *Processor, count int) {
 
 func assertPollExistsForBlock(t *testing.T, p *Processor, b *Block) {
 	found := false
-	for _, inv := range p.getInvsForNextPoll() {
-		if inv.targetHash == b.Hash() {
+	for _, inv := range p.GetInvsForNextPoll() {
+		if inv.TargetHash == b.Hash() {
 			found = true
 		}
 	}
@@ -422,7 +422,7 @@ func assertConfidence(t *testing.T, p *Processor, b *Block, expectedC uint16) {
 
 func TestPollAndResponse(t *testing.T) {
 	var (
-		connman = newConnman()
+		connman = NewConnman()
 		p       = NewProcessor(connman)
 		avanode = NodeID(0)
 
@@ -431,7 +431,7 @@ func TestPollAndResponse(t *testing.T) {
 		blockHash = Hash(65)
 		pindex    = blockForHash(blockHash)
 	)
-	connman.addNode(avanode)
+	connman.AddNode(avanode)
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {

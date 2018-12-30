@@ -31,10 +31,7 @@ type VoteRecord struct {
 // NewVoteRecord instantiates a new base record for voting on a target
 // `accepted` indicates whether or not the initial state should be acceptance
 func NewVoteRecord(accepted bool) *VoteRecord {
-	return &VoteRecord{
-		votes:      0xaa,
-		confidence: boolToUint16(accepted),
-	}
+	return &VoteRecord{confidence: boolToUint16(accepted)}
 }
 
 // isAccepted returns whether or not the voted state is acceptance or not

@@ -63,8 +63,8 @@ type StatusUpdate struct {
 
 // Inv is a poll request for a Target
 type Inv struct {
-	targetType string
-	targetHash Hash
+	TargetType string
+	TargetHash Hash
 }
 
 // Hash is a unique digest that represents a Target
@@ -163,7 +163,7 @@ func sortBlockInvsByWork(invs []Inv) {
 	blocks := make(blocksByWork, len(invs))
 	for i, inv := range invs {
 		// TODO: Return error if a targetType is not "block"
-		blocks[i] = blockForHash(inv.targetHash)
+		blocks[i] = blockForHash(inv.TargetHash)
 	}
 
 	sort.Sort(blocks)

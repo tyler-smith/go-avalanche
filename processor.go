@@ -10,7 +10,7 @@ import (
 // Processor drives the Avalanche process by sending queries and handling
 // responses.
 type Processor struct {
-	connman *connman
+	connman *Connman
 
 	round       int64
 	targets     map[Hash]Target
@@ -25,7 +25,7 @@ type Processor struct {
 }
 
 // NewProcessor creates a new *Processor
-func NewProcessor(connman *connman) *Processor {
+func NewProcessor(connman *Connman) *Processor {
 	return &Processor{
 		voteRecords: map[Hash]*VoteRecord{},
 		targets:     map[Hash]Target{},
@@ -59,32 +59,37 @@ func (p *Processor) AddTargetToReconcile(t Target) bool {
 
 // RegisterVotes processes responses to queries
 func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpdate) bool {
-	key := queryKey(resp.GetRound(), id)
+	// Disabled while hacking on simulations
+	if false {
+		key := queryKey(resp.GetRound(), id)
 
-	r, ok := p.queries[key]
-	if !ok {
-		return false
-	}
-
-	// Always delete the key if it's present
-	delete(p.queries, key)
-
-	if r.IsExpired() {
-		return false
-	}
-
-	invs := r.GetInvs()
-	votes := resp.GetVotes()
-
-	if len(votes) != len(invs) {
-		return false
-	}
-
-	for i, v := range votes {
-		if invs[i].targetHash != v.GetHash() {
+		r, ok := p.queries[key]
+		if !ok {
 			return false
 		}
+
+		// Always delete the key if it's present
+		delete(p.queries, key)
+
+		if r.IsExpired() {
+			return false
+		}
+
+		invs := r.GetInvs()
+		votes := resp.GetVotes()
+
+		if len(votes) != len(invs) {
+			return false
+		}
+
+		for i, v := range votes {
+			if invs[i].TargetHash != v.GetHash() {
+				return false
+			}
+		}
 	}
+
+	votes := resp.GetVotes()
 
 	for _, v := range votes {
 		vr, ok := p.voteRecords[v.GetHash()]
@@ -134,11 +139,10 @@ func (p *Processor) GetConfidence(t Target) uint16 {
 	return vr.getConfidence()
 }
 
-// getInvsForNextPoll returns Invs for outstanding items that need to be
+// GetInvsForNextPoll returns Invs for outstanding items that need to be
 // resolved by further queries
-func (p *Processor) getInvsForNextPoll() []Inv {
+func (p *Processor) GetInvsForNextPoll() []Inv {
 	invs := make([]Inv, 0, len(p.voteRecords))
-
 	for idx, r := range p.voteRecords {
 		if r.hasFinalized() {
 			// If this has finalized we can just skip.
@@ -156,7 +160,7 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 		invs = append(invs, Inv{t.Type(), idx})
 	}
 
-	sortBlockInvsByWork(invs)
+	// sortBlockInvsByWork(invs)
 
 	if len(invs) >= AvalancheMaxElementPoll {
 		invs = invs[:AvalancheMaxElementPoll]
@@ -167,7 +171,7 @@ func (p *Processor) getInvsForNextPoll() []Inv {
 
 // getSuitableNodeToQuery returns the best node to send the next query to
 func (p *Processor) getSuitableNodeToQuery() NodeID {
-	nodeIDs := p.connman.nodesIDs()
+	nodeIDs := p.connman.NodesIDs()
 
 	sort.Sort(nodesInRequestOrder(nodeIDs))
 
@@ -229,7 +233,7 @@ func (p *Processor) stop() bool {
 
 // eventLoop performs a tick of processing
 func (p *Processor) eventLoop() {
-	invs := p.getInvsForNextPoll()
+	invs := p.GetInvsForNextPoll()
 	if len(invs) == 0 {
 		return
 	}
