@@ -91,22 +91,22 @@ var nodesFullyFinalized = 0
 func (n node) run(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	finalizedCount := 0
-
-	// HACK: figure out how to best signal event loop so it quits if and only if
-	// we're done adding and all txs are finalized
-	doneAdding := make(chan (struct{}))
+	// Create goroutine to add incoming txs to Processor
+	doneAdding := false
 	go func() {
 		for t := range n.incoming {
 			n.snowballMu.Lock()
 			n.snowball.AddTargetToReconcile(t)
 			n.snowballMu.Unlock()
 		}
-		close(doneAdding)
+		doneAdding = true
 	}()
-	<-doneAdding
 
-	queries := 0
+	// Start query/response event loop
+	var (
+		queries        = 0
+		finalizedCount = 0
+	)
 	for i := 0; i < 1e8; i++ {
 		nodeID := i % len(networkNodes)
 
@@ -115,20 +115,20 @@ func (n node) run(wg *sync.WaitGroup) {
 			continue
 		}
 
+		// Get invs for next query
 		queries++
 		updates := []avalanche.StatusUpdate{}
-
-		// Query node
 		n.snowballMu.Lock()
 		invs := n.snowball.GetInvsForNextPoll()
 		n.snowballMu.Unlock()
 
-		// All done
-		// if len(invs) == 0 {
-		// 	fmt.Println("Out of invs:", n.id)
-		// 	return
-		// }
+		if len(invs) == 0 {
+			log("Out of invs: %d", n.id)
+			time.Sleep(avalanche.AvalancheTimeStep)
+			continue
+		}
 
+		// Query next node
 		resp := networkNodes[nodeID].query(invs)
 
 		// Register query response
@@ -136,10 +136,12 @@ func (n node) run(wg *sync.WaitGroup) {
 		n.snowball.RegisterVotes(n.id, resp, &updates)
 		n.snowballMu.Unlock()
 
+		// Nothing interesting happened; go to next cycle
 		if len(updates) == 0 {
 			continue
 		}
 
+		// Got some updates; process them
 		for _, update := range updates {
 			if update.Status == avalanche.StatusFinalized {
 				finalizedCount++
@@ -156,7 +158,9 @@ func (n node) run(wg *sync.WaitGroup) {
 			}
 		}
 
-		if finalizedCount >= txCount {
+		// If we're done accepting new tx and have finalized all outstanding txs
+		// then we're finished
+		if doneAdding && finalizedCount >= txCount {
 			nodesFullyFinalized++
 			return
 		}
@@ -182,7 +186,7 @@ func (n node) query(invs []avalanche.Inv) avalanche.Response {
 		}
 
 		// Randomly flip votes to prolong convergence
-		// if rand.Float64()*100 < 35 {
+		// if rand.Float64()*100 < 30 {
 		// 	vote = vote ^ 1
 		// }
 
