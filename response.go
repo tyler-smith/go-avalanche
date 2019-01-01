@@ -4,9 +4,9 @@ import "time"
 
 // Response is a list of votes that respond to a Poll
 type Response struct {
-	round    int64
-	cooldown uint32
-	votes    []Vote
+	Round    int64  `json:"round"`
+	Cooldown uint32 `json:"cooldown"`
+	Votes    []Vote `json:"votes"`
 }
 
 // NewResponse creates a new Response object with the given votes
@@ -16,12 +16,12 @@ func NewResponse(round int64, cooldown uint32, votes []Vote) Response {
 
 // GetVotes returns the votes in the Response
 func (r Response) GetVotes() []Vote {
-	return r.votes
+	return r.Votes
 }
 
 // GetRound returns the round of the Response
 func (r Response) GetRound() int64 {
-	return r.round
+	return r.Round
 }
 
 // RequestRecord is a poll request for more votes

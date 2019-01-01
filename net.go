@@ -1,11 +1,8 @@
 package avalanche
 
 type node struct {
-	id NodeID
-}
-
-func newNode(id NodeID) *node {
-	return &node{id: id}
+	id   NodeID
+	host string
 }
 
 type Connman struct {
@@ -18,8 +15,8 @@ func NewConnman() *Connman {
 	}
 }
 
-func (c *Connman) AddNode(id NodeID) {
-	c.nodes[id] = newNode(id)
+func (c *Connman) AddNode(id NodeID, host string) {
+	c.nodes[id] = &node{id: id, host: host}
 }
 
 func (c *Connman) NodesIDs() []NodeID {

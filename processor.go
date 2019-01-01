@@ -42,6 +42,8 @@ func (p *Processor) GetRound() int64 {
 }
 
 // AddTargetToReconcile begins the voting process for a given target
+// var blah = 0
+
 func (p *Processor) AddTargetToReconcile(t Target) bool {
 	if !p.isWorthyPolling(t) {
 		return false
@@ -49,9 +51,16 @@ func (p *Processor) AddTargetToReconcile(t Target) bool {
 
 	_, ok := p.voteRecords[t.Hash()]
 	if ok {
+		// fmt.Println("found vr for", t.Hash())
 		return false
 	}
 
+	// blah++
+
+	// if blah > 10 {
+	// 	panic("")
+	// }
+	// fmt.Println("Adding", t.Hash())
 	p.targets[t.Hash()] = t
 	p.voteRecords[t.Hash()] = NewVoteRecord(t.IsAccepted())
 	return true
@@ -112,7 +121,7 @@ func (p *Processor) RegisterVotes(id NodeID, resp Response, updates *[]StatusUpd
 
 		// When we finalize we want to remove our vote record
 		if vr.hasFinalized() {
-			delete(p.voteRecords, v.GetHash())
+			// delete(p.voteRecords, v.GetHash())
 		}
 	}
 

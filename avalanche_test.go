@@ -97,14 +97,14 @@ func TestBlockRegister(t *testing.T) {
 		nodeID  = NodeID(0)
 
 		updates   = []StatusUpdate{}
-		blockHash = Hash(65)
+		blockHash = Hash("A")
 		pindex    = blockForHash(blockHash)
 
-		noVote      = Response{votes: []Vote{NewVote(1, blockHash)}}
-		yesVote     = Response{votes: []Vote{NewVote(0, blockHash)}}
-		neutralVote = Response{votes: []Vote{NewVote(negativeOne, blockHash)}}
+		noVote      = Response{Votes: []Vote{NewVote(1, blockHash)}}
+		yesVote     = Response{Votes: []Vote{NewVote(0, blockHash)}}
+		neutralVote = Response{Votes: []Vote{NewVote(negativeOne, blockHash)}}
 	)
-	connman.AddNode(nodeID)
+	connman.AddNode(nodeID, "")
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
@@ -260,9 +260,9 @@ func TestMultiBlockRegister(t *testing.T) {
 
 		updates = []StatusUpdate{}
 
-		blockHashA = Hash(65)
+		blockHashA = Hash("A")
 		pindexA    = blockForHash(blockHashA)
-		blockHashB = Hash(66)
+		blockHashB = Hash("B")
 		pindexB    = blockForHash(blockHashB)
 
 		round          = p.GetRound()
@@ -270,8 +270,8 @@ func TestMultiBlockRegister(t *testing.T) {
 		yesVoteForB    = Response{round + 1, 0, []Vote{NewVote(0, blockHashB)}}
 		yesVoteForBoth = Response{round + 1, 0, []Vote{NewVote(0, blockHashB), NewVote(0, blockHashA)}}
 	)
-	connman.AddNode(nodeID0)
-	connman.AddNode(nodeID1)
+	connman.AddNode(nodeID0, "")
+	connman.AddNode(nodeID1, "")
 
 	// TODO: Implement polling both nodes like in the ABC tests. Currently it
 	// always uses node0. Need to fix the getSuitableNode logic in Processor
@@ -428,10 +428,10 @@ func TestPollAndResponse(t *testing.T) {
 
 		updates = []StatusUpdate{}
 
-		blockHash = Hash(65)
+		blockHash = Hash("A")
 		pindex    = blockForHash(blockHash)
 	)
-	connman.AddNode(avanode)
+	connman.AddNode(avanode, "")
 
 	assertUpdateCount := func(c int) {
 		if len(updates) != c {
@@ -513,7 +513,7 @@ func TestPollAndResponse(t *testing.T) {
 	assertUpdateCount(0)
 
 	// Out of order response are rejected.
-	blockHashB := Hash(66)
+	blockHashB := Hash("B")
 	pindexB := blockForHash(blockHashB)
 	assertTrue(t, p.AddTargetToReconcile(pindexB))
 

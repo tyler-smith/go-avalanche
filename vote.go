@@ -2,8 +2,8 @@ package avalanche
 
 // Vote represents a single vote for a target
 type Vote struct {
-	err  uint32 // this is called "error" in abc for some reason
-	hash Hash
+	Err  uint32 `json:"err"` // this is called "error" in abc for some reason
+	Hash Hash   `json:"hash"`
 }
 
 // NewVote creates a new Vote for the given hash
@@ -13,12 +13,12 @@ func NewVote(err uint32, hash Hash) Vote {
 
 // GetHash returns the target hash
 func (v Vote) GetHash() Hash {
-	return v.hash
+	return v.Hash
 }
 
 // GetError returns the vote
 func (v Vote) GetError() uint32 {
-	return v.err
+	return v.Err
 }
 
 // VoteRecord keeps track of a series of votes for a target

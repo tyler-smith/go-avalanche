@@ -68,7 +68,7 @@ type Inv struct {
 }
 
 // Hash is a unique digest that represents a Target
-type Hash int
+type Hash string
 
 // Target is is something being decided by consensus; e.g. a transaction or block
 type Target interface {
