@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -24,14 +23,15 @@ import (
 const (
 	// nodeCount = 2
 	// nodeCount = 20
-	nodeCount = 1e2
+	defaultNodeCount = 1e2
 	// txCount   = 1e2
 )
 
 var (
-	networkNodes map[avalanche.NodeID]*node
-	// networkNodes   []*node
-	loggingEnabled = true
+	// networkNodes       map[avalanche.NodeID]*node
+	networkEndpointsMu sync.RWMutex
+	networkEndpoints   []string
+	loggingEnabled     = true
 )
 
 // ex: {"jsonrpc":"1.0","method":"txaccepted","params":["898666f2dc524bf3de8177edf044b789cd53d882a28225a66ec54b2803a9d678",0.271071],"id":null}
@@ -103,17 +103,46 @@ func sniffTransactions(nodes map[avalanche.NodeID]*node) (chan struct{}, error) 
 	return done, nil
 }
 
+func maintainParticipants(rConn redis.Conn) error {
+	loadNewEndpoints := func() error {
+		networkEndpointsMu.Lock()
+		endpoints, err := getEndpoints(rConn)
+		networkEndpointsMu.Unlock()
+
+		if err != nil {
+			return err
+		}
+
+		networkEndpoints = endpoints
+		return nil
+	}
+
+	go func() {
+		ticker := time.NewTicker(redisEndpointTTL)
+		for range ticker.C {
+			fmt.Println("Refreshing participants...")
+			loadNewEndpoints()
+		}
+	}()
+
+	return loadNewEndpoints()
+}
+
 func main() {
-	nodeID := flag.Int64("id", -1, "Node ID")
+	// nodeIDPtr := flag.Int("id", -1, "Node ID")
+	nodeCountPtr := flag.Int("c", defaultNodeCount, "Node ID")
 	logging := flag.Bool("logging", false, "Enable logging")
 	flag.Parse()
+
+	nodeCount := *nodeCountPtr
+
 	if logging != nil {
 		loggingEnabled = *logging
 	}
 
-	if *nodeID == -1 {
-		panic("Must set id")
-	}
+	// if *nodeIDPtr == -1 {
+	// 	panic("Must set id")
+	// }
 	// id := avalanche.NodeID(*nodeID)
 
 	rConn, err := redis.Dial("tcp", ":6379")
@@ -122,16 +151,22 @@ func main() {
 	}
 	defer rConn.Close()
 
+	// Start maintaining pool of other participants
+	err = maintainParticipants(rConn)
+	if err != nil {
+		panic(err)
+	}
+
 	// Create nodes
-	networkNodes = make(map[avalanche.NodeID]*node, nodeCount)
+	nodes := make(map[avalanche.NodeID]*node, nodeCount)
 	for i := 0; i < nodeCount; i++ {
 		id := avalanche.NodeID(i)
-		networkNodes[id] = newNode(id, rConn, avalanche.NewConnman())
-		networkNodes[id].start()
+		nodes[id] = newNode(id, rConn, avalanche.NewConnman())
+		nodes[id].start()
 	}
 
 	// Listen for new txs to the mempool and attempt to finalize
-	stopSniffing, err := sniffTransactions(networkNodes)
+	stopSniffing, err := sniffTransactions(nodes)
 	if err != nil {
 		panic(err)
 	}
@@ -146,7 +181,7 @@ func main() {
 	close(stopSniffing)
 
 	// Stop all nodes
-	for _, n := range networkNodes {
+	for _, n := range nodes {
 		fmt.Println("stopping node", n.id)
 		n.stop()
 		fmt.Println("stopped node")
@@ -216,10 +251,16 @@ func (n *node) startProcessor() {
 			case <-ticker.C:
 			}
 
-			nodeID := i % len(networkNodes)
+			networkEndpointsMu.RLock()
+			if len(networkEndpoints) == 0 {
+				networkEndpointsMu.RUnlock()
+				continue
+			}
+			endpoint := networkEndpoints[i%len(networkEndpoints)]
+			networkEndpointsMu.RUnlock()
 
 			// Don't query ourself
-			if nodeID == int(n.id) {
+			if endpoint == n.host {
 				continue
 			}
 
@@ -234,7 +275,7 @@ func (n *node) startProcessor() {
 			}
 
 			// Query next node
-			resp, err := n.sendQuery(avalanche.NodeID(nodeID), invs)
+			resp, err := n.sendQuery(endpoint, invs)
 			if err != nil {
 				panic(err)
 			}
@@ -318,18 +359,13 @@ func (n *node) startPollServer() error {
 	return nil
 }
 
-func (n node) sendQuery(nodeID avalanche.NodeID, invs []avalanche.Inv) (*avalanche.Response, error) {
-	node, ok := networkNodes[nodeID]
-	if !ok {
-		return nil, errors.New("Node not found")
-	}
-
+func (n node) sendQuery(endpoint string, invs []avalanche.Inv) (*avalanche.Response, error) {
 	body, err := json.Marshal(invs)
 	if err != nil {
 		return nil, err
 	}
 
-	httpResp, err := http.Post(node.host, "text", bytes.NewBuffer(body))
+	httpResp, err := http.Post(endpoint, "text", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
