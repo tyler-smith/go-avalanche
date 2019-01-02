@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -20,28 +20,19 @@ import (
 	avalanche "github.com/tyler-smith/go-avalanche"
 )
 
-const (
-	// nodeCount = 2
-	// nodeCount = 20
-	defaultNodeCount = 1e2
-	// txCount   = 1e2
-)
-
 var (
-	// networkNodes       map[avalanche.NodeID]*node
-	networkEndpointsMu sync.RWMutex
-	networkEndpoints   []string
-	loggingEnabled     = true
+	networkEndpointsMu  sync.RWMutex
+	networkEndpoints    []string
+	debugLoggingEnabled = true
 )
 
-// ex: {"jsonrpc":"1.0","method":"txaccepted","params":["898666f2dc524bf3de8177edf044b789cd53d882a28225a66ec54b2803a9d678",0.271071],"id":null}
 type jsonRPCResponse struct {
 	Method string        `json:"method"`
 	Params []interface{} `json:"params"`
 }
 
-func sniffTransactions(nodes map[avalanche.NodeID]*node) (chan struct{}, error) {
-	c, _, err := websocket.DefaultDialer.Dial("ws://localhost:8334/ws", nil)
+func sniffTransactions(conf BCHDConfig, nodes map[avalanche.NodeID]*node) (chan struct{}, error) {
+	c, _, err := websocket.DefaultDialer.Dial("ws://"+conf.Host+"/ws", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +81,7 @@ func sniffTransactions(nodes map[avalanche.NodeID]*node) (chan struct{}, error) 
 		}
 	}()
 
-	err = c.WriteMessage(websocket.TextMessage, []byte(`{"jsonrpc":"1.0","id":"1","method":"authenticate","params":["zQaGSKAfEVtw8MV49WfgLMVQxOc=", "DO6BZ4ojV+YN9VYMgP3QVH9BBM8="]}`))
+	err = c.WriteMessage(websocket.TextMessage, []byte(`{"jsonrpc":"1.0","id":"1","method":"authenticate","params":["`+conf.User+`", "`+conf.Password+`"]}`))
 	if err != nil {
 		return nil, err
 	}
@@ -129,46 +120,41 @@ func maintainParticipants(rConn redis.Conn) error {
 }
 
 func main() {
-	// nodeIDPtr := flag.Int("id", -1, "Node ID")
-	nodeCountPtr := flag.Int("c", defaultNodeCount, "Node ID")
-	logging := flag.Bool("logging", false, "Enable logging")
-	flag.Parse()
-
-	nodeCount := *nodeCountPtr
-
-	if logging != nil {
-		loggingEnabled = *logging
+	conf, err := NewConfigFromEnv()
+	if err != nil {
+		log.Fatal(err)
+		return
 	}
 
-	// if *nodeIDPtr == -1 {
-	// 	panic("Must set id")
-	// }
-	// id := avalanche.NodeID(*nodeID)
+	debugLoggingEnabled = conf.Logging
 
-	rConn, err := redis.Dial("tcp", ":6379")
+	rConn, err := redis.Dial("tcp", conf.RedisHost)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
+		return
 	}
 	defer rConn.Close()
 
-	// Start maintaining pool of other participants
+	// Start maintaining pool of participants
 	err = maintainParticipants(rConn)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
+		return
 	}
 
 	// Create nodes
-	nodes := make(map[avalanche.NodeID]*node, nodeCount)
-	for i := 0; i < nodeCount; i++ {
+	nodes := make(map[avalanche.NodeID]*node, conf.NodeCount)
+	for i := 0; i < conf.NodeCount; i++ {
 		id := avalanche.NodeID(i)
 		nodes[id] = newNode(id, rConn, avalanche.NewConnman())
 		nodes[id].start()
 	}
 
 	// Listen for new txs to the mempool and attempt to finalize
-	stopSniffing, err := sniffTransactions(nodes)
+	stopSniffing, err := sniffTransactions(conf.BCHD, nodes)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
+		return
 	}
 
 	// Wait for exit signal
@@ -176,21 +162,16 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
 
-	log("Shutting down...")
+	debug("Shutting down...")
 
 	close(stopSniffing)
 
 	// Stop all nodes
 	for _, n := range nodes {
-		fmt.Println("stopping node", n.id)
 		n.stop()
-		fmt.Println("stopped node")
 	}
-	// for i := 0; i < nodeCount; i++ {
-	// 	close(networkNodes[avalanche.NodeID(i)].incoming)
-	// }
 
-	log("Done shutting down")
+	debug("Done shutting down")
 }
 
 type node struct {
@@ -239,9 +220,8 @@ func (n *node) startProcessor() {
 		defer n.doneWg.Done()
 
 		var (
-			queries        = 0
-			finalizedCount = 0
-			ticker         = time.NewTicker(avalanche.AvalancheTimeStep)
+			queries = 0
+			ticker  = time.NewTicker(avalanche.AvalancheTimeStep)
 		)
 
 		for i := 0; ; i++ {
@@ -294,15 +274,13 @@ func (n *node) startProcessor() {
 			// Got some updates; process them
 			for _, update := range updates {
 				if update.Status == avalanche.StatusFinalized {
-					finalizedCount++
-					// fmt.Println(update.Hash)
-					log("Finalized tx %s on node %d on query %d - %d", update.Hash, n.id, queries, time.Now().Unix())
+					debug("Finalized tx %s on node %d on query %d - %d", update.Hash, n.id, queries, time.Now().Unix())
 				} else if update.Status == avalanche.StatusAccepted {
-					log("Accepted tx %s on node %d on query %d", update.Hash, n.id, queries)
+					debug("Accepted tx %s on node %d on query %d", update.Hash, n.id, queries)
 				} else if update.Status == avalanche.StatusRejected {
-					log("Rejected tx %s on node %d on query %d", update.Hash, n.id, queries)
+					debug("Rejected tx %s on node %d on query %d", update.Hash, n.id, queries)
 				} else if update.Status == avalanche.StatusInvalid {
-					log("Invalidated tx %s on node %d on query %d", update.Hash, n.id, queries)
+					debug("Invalidated tx %s on node %d on query %d", update.Hash, n.id, queries)
 				} else {
 					fmt.Println(update.Status == avalanche.StatusAccepted)
 					panic(update)
@@ -442,8 +420,8 @@ func (*tx) Type() string { return "tx" }
 
 func (*tx) Score() int64 { return 1 }
 
-func log(str string, args ...interface{}) {
-	if loggingEnabled {
+func debug(str string, args ...interface{}) {
+	if debugLoggingEnabled {
 		fmt.Println(fmt.Sprintf(str, args...))
 	}
 }
