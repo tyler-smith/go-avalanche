@@ -178,6 +178,10 @@ func (p *Processor) GetInvsForNextPoll() []Inv {
 	return invs
 }
 
+func (p *Processor) GetVoteRecord(h Hash) (*VoteRecord, error) {
+	return p.voteRecords[h], nil
+}
+
 // getSuitableNodeToQuery returns the best node to send the next query to
 func (p *Processor) getSuitableNodeToQuery() NodeID {
 	nodeIDs := p.connman.NodesIDs()

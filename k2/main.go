@@ -11,11 +11,14 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/gocraft/dbr"
+	"github.com/gocraft/health"
 	"github.com/gorilla/websocket"
 	avalanche "github.com/tyler-smith/go-avalanche"
 )
@@ -36,6 +39,21 @@ func sniffTransactions(conf BCHDConfig, nodes map[avalanche.NodeID]*node) (chan 
 	if err != nil {
 		return nil, err
 	}
+
+	httpClient := &http.Client{}
+
+	// connCfg := &rpcclient.ConnConfig{
+	// 	Host:     conf.Host,
+	// 	Endpoint: "ws",
+	// 	User:     conf.User,
+	// 	Pass:     conf.Password,
+	// }
+
+	// client, err := rpcclient.New(connCfg, nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer client.Shutdown()
 
 	done := make(chan struct{})
 
@@ -62,21 +80,69 @@ func sniffTransactions(conf BCHDConfig, nodes map[avalanche.NodeID]*node) (chan 
 					return
 				}
 
-				if resp.Method != "txaccepted" {
+				switch resp.Method {
+				case "txaccepted":
+					h, ok := resp.Params[0].(string)
+					if !ok {
+						fmt.Println("Failed to convert to string:", resp.Params[0])
+						return
+					}
+
+					t := &tx{ID: h, isAccepted: true}
+
+					// Add tx to db
+					err = createTransaction(dbConn.NewSession(stream), t)
+					if err != nil {
+						fmt.Println("createTransaction:", err)
+						return
+					}
+
+					// Send tx to nodes
+					for _, n := range nodes {
+						n.incoming <- t
+					}
+
+					fmt.Println("got tx:", resp.Params[0], "-", time.Now().Unix())
+				case "blockconnected":
+					return
+					h, ok := resp.Params[0].(string)
+					if !ok {
+						fmt.Println("Failed to convert to string:", resp.Params[0])
+						return
+					}
+
+					req, err := http.NewRequest("POST", "http://"+conf.Host, bytes.NewBuffer([]byte(`{"jsonrpc":"1.0","id":"0","method":"getblock","params":["`+h+`"]}`)))
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					req.SetBasicAuth(conf.User, conf.Password)
+					resp, err := httpClient.Do(req)
+					if err != nil {
+						log.Fatalln(err)
+					}
+					defer resp.Body.Close()
+
+					respBytes, err := ioutil.ReadAll(resp.Body)
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					txs := struct {
+						TX []string `json:"tx"`
+					}{}
+
+					err = json.Unmarshal(respBytes, &txs)
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					for _, tx := range txs.TX {
+						fmt.Println("new confirmed tx:", tx)
+					}
+				default:
 					return
 				}
-
-				h, ok := resp.Params[0].(string)
-				if !ok {
-					fmt.Println("Failed to convert to string:", resp.Params[0])
-					return
-				}
-
-				for _, n := range nodes {
-					n.incoming <- &tx{hash: avalanche.Hash(h), isAccepted: true}
-				}
-
-				fmt.Println("got tx:", resp.Params[0], "-", time.Now().Unix())
 			}()
 		}
 	}()
@@ -91,13 +157,21 @@ func sniffTransactions(conf BCHDConfig, nodes map[avalanche.NodeID]*node) (chan 
 		return nil, err
 	}
 
+	err = c.WriteMessage(websocket.TextMessage, []byte(`{"jsonrpc":"1.0","id":"0","method":"notifyblocks","params":[]}`))
+	if err != nil {
+		return nil, err
+	}
+
 	return done, nil
 }
 
-func maintainParticipants(rConn redis.Conn) error {
+func maintainParticipants(db *dbr.Session) error {
+	// func maintainParticipants(rConn redis.Conn) error {
 	loadNewEndpoints := func() error {
 		networkEndpointsMu.Lock()
-		endpoints, err := getEndpoints(rConn)
+
+		// TODO: get from mysql db
+		endpoints, err := getParticipants(db)
 		networkEndpointsMu.Unlock()
 
 		if err != nil {
@@ -109,7 +183,8 @@ func maintainParticipants(rConn redis.Conn) error {
 	}
 
 	go func() {
-		ticker := time.NewTicker(redisEndpointTTL)
+		ticker := time.NewTicker(10 * time.Second)
+		// ticker := time.NewTicker(redisEndpointTTL)
 		for range ticker.C {
 			fmt.Println("Refreshing participants...")
 			loadNewEndpoints()
@@ -119,6 +194,8 @@ func maintainParticipants(rConn redis.Conn) error {
 	return loadNewEndpoints()
 }
 
+var stream = health.NewStream()
+
 func main() {
 	conf, err := NewConfigFromEnv()
 	if err != nil {
@@ -126,17 +203,16 @@ func main() {
 		return
 	}
 
-	debugLoggingEnabled = conf.Logging
-
-	rConn, err := redis.Dial("tcp", conf.RedisHost)
+	dbConn, err = dbr.Open("mysql", conf.MySQLDSN, stream)
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
-	defer rConn.Close()
+
+	debugLoggingEnabled = conf.Logging
 
 	// Start maintaining pool of participants
-	err = maintainParticipants(rConn)
+	err = maintainParticipants(dbConn.NewSession(stream))
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -146,7 +222,7 @@ func main() {
 	nodes := make(map[avalanche.NodeID]*node, conf.NodeCount)
 	for i := 0; i < conf.NodeCount; i++ {
 		id := avalanche.NodeID(i)
-		nodes[id] = newNode(id, rConn, avalanche.NewConnman())
+		nodes[id] = newNode(id, avalanche.NewConnman())
 		nodes[id].start()
 	}
 
@@ -175,23 +251,26 @@ func main() {
 }
 
 type node struct {
-	id         avalanche.NodeID
+	id avalanche.NodeID
+
 	snowball   *avalanche.Processor
 	snowballMu *sync.RWMutex
-	incoming   chan (*tx)
-	host       string
-	rConn      redis.Conn
+
+	participant *Participant
+
+	incoming chan (*tx)
+	host     string
 
 	quitCh chan (struct{})
 	doneWg *sync.WaitGroup
 }
 
-func newNode(id avalanche.NodeID, rConn redis.Conn, connman *avalanche.Connman) *node {
+func newNode(id avalanche.NodeID, connman *avalanche.Connman) *node {
 	return &node{
-		id:         id,
-		rConn:      rConn,
+		id:       id,
+		incoming: make(chan (*tx), 10),
+
 		snowballMu: &sync.RWMutex{},
-		incoming:   make(chan (*tx), 10),
 		snowball:   avalanche.NewProcessor(connman),
 
 		quitCh: make(chan (struct{})),
@@ -255,9 +334,10 @@ func (n *node) startProcessor() {
 			}
 
 			// Query next node
+			// fmt.Println("sending query...")
 			resp, err := n.sendQuery(endpoint, invs)
 			if err != nil {
-				panic(err)
+				continue
 			}
 
 			// Register query response
@@ -274,10 +354,12 @@ func (n *node) startProcessor() {
 			// Got some updates; process them
 			for _, update := range updates {
 				if update.Status == avalanche.StatusFinalized {
+					err = finalizeVoteRecord(dbConn.NewSession(stream), int(n.id), string(update.Hash), queries, true)
 					debug("Finalized tx %s on node %d on query %d - %d", update.Hash, n.id, queries, time.Now().Unix())
 				} else if update.Status == avalanche.StatusAccepted {
 					debug("Accepted tx %s on node %d on query %d", update.Hash, n.id, queries)
 				} else if update.Status == avalanche.StatusRejected {
+					err = finalizeVoteRecord(dbConn.NewSession(stream), int(n.id), string(update.Hash), queries, false)
 					debug("Rejected tx %s on node %d on query %d", update.Hash, n.id, queries)
 				} else if update.Status == avalanche.StatusInvalid {
 					debug("Invalidated tx %s on node %d on query %d", update.Hash, n.id, queries)
@@ -294,11 +376,25 @@ func (n *node) startProcessor() {
 func (n *node) startIntake() {
 	go func() {
 		defer n.doneWg.Done()
+		var err error
 		for {
 			select {
 			case <-n.quitCh:
 				return
 			case t := <-n.incoming:
+				fmt.Println("tx intake", *t)
+				err = createVoteRecord(dbConn.NewSession(stream), &voteRecord{
+					TXID:                t.ID,
+					ParticipantID:       n.participant.ID,
+					InitializedAccepted: true,
+				})
+
+				if err != nil && !strings.Contains(err.Error(), "Duplicate entry") {
+					debug("Error creating vote record: %v", err)
+					continue
+				}
+
+				fmt.Println("adding tx to snowball")
 				n.snowballMu.Lock()
 				n.snowball.AddTargetToReconcile(t)
 				n.snowballMu.Unlock()
@@ -318,10 +414,13 @@ func (n *node) startPollServer() error {
 
 	n.host = "http://localhost:" + strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 
-	err = setEndpoint(n.rConn, n.host)
+	n.participant = &Participant{UserID: 42, Key: n.host}
+	err = createParticipant(dbConn.NewSession(stream), n.participant)
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("id:", n.participant.ID)
 
 	go func() {
 		defer n.doneWg.Done()
@@ -329,7 +428,23 @@ func (n *node) startPollServer() error {
 
 		srv := http.Server{Handler: mux}
 		go srv.Serve(l)
-		<-n.quitCh
+
+		ticker := time.NewTicker(3 * time.Minute)
+
+	PARTICIPANT_UPDATE_LOOP:
+		for {
+			select {
+			case <-n.quitCh:
+				break PARTICIPANT_UPDATE_LOOP
+			case <-ticker.C:
+				err = updateParticipantActivity(dbConn.NewSession(stream), participant)
+				if err != nil {
+					fmt.Println(err)
+				}
+
+			}
+		}
+
 		fmt.Println("stopping poll server")
 		srv.Shutdown(nil)
 	}()
@@ -386,7 +501,7 @@ func (n *node) respondToPoll(w http.ResponseWriter, r *http.Request) {
 
 	for i := 0; i < len(invs); i++ {
 		n.snowball.AddTargetToReconcile(&tx{
-			hash:       invs[i].TargetHash,
+			ID:         string(invs[i].TargetHash),
 			isAccepted: true,
 		})
 
@@ -402,26 +517,4 @@ func (n *node) respondToPoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintln(w, string(body))
-}
-
-// tx
-type tx struct {
-	hash       avalanche.Hash
-	isAccepted bool
-}
-
-func (t *tx) Hash() avalanche.Hash { return t.hash }
-
-func (t *tx) IsAccepted() bool { return t.isAccepted }
-
-func (*tx) IsValid() bool { return true }
-
-func (*tx) Type() string { return "tx" }
-
-func (*tx) Score() int64 { return 1 }
-
-func debug(str string, args ...interface{}) {
-	if debugLoggingEnabled {
-		fmt.Println(fmt.Sprintf(str, args...))
-	}
 }

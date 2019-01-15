@@ -43,7 +43,7 @@ func NewConfigFromEnv() (Config, error) {
 		},
 
 		RedisHost: envString("K2_REDIS_HOST", "localhost:6379"),
-		MySQLDSN:  envString("K2_MYSQL_DSN", "root:password@tcp(localhost:3306)/k2"),
+		MySQLDSN:  envString("K2_MYSQL_DSN", "root:password@tcp(localhost:3306)/k2?parseTime=true"),
 		Logging:   envBool("K2_LOGGING", true),
 	}, nil
 }
